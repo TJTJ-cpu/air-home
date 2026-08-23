@@ -1,0 +1,6 @@
+opencv-python>=4.10
+pillow>=10.4
+openai>=1.40
+python-dotenv>=1.0
+pandas>=2.2
+numpy>=1.26
