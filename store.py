@@ -42,7 +42,21 @@ def connect(path: Path | None = None):
         yield conn
         conn.commit()
     finally:
+        checkpoint(conn)
         conn.close()
+
+
+def checkpoint(conn: sqlite3.Connection) -> None:
+    """Fold the write-ahead log back into readings.db.
+
+    Until this runs, recent readings live only in readings.db-wal -- so a copy
+    or a commit of readings.db alone would silently be missing them. Cheap
+    enough to call often.
+    """
+    try:
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    except sqlite3.Error:
+        pass  # another connection is mid-write; the next attempt will get it
 
 
 def save(conn: sqlite3.Connection, captured_at: str, image: str,

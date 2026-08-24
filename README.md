@@ -1,161 +1,159 @@
 # air-home
 
-Logs the readings off a physical INKBIRD PLUS air quality monitor by
-photographing it with a webcam and transcribing the display with a local
-vision model.
+Keeps a record of the air quality in my house, by taking a photo of my air
+monitor and letting an AI read the numbers off the screen.
 
-The monitor has no data output — it is a screen. So: a webcam takes a photo on
-an interval, a local vision model in LM Studio reads the digits, and the values
-go into a SQLite database. Everything runs and stays on this machine.
+## The problem
+
+I have an INKBIRD PLUS air monitor. It shows CO₂, temperature, humidity, AQI,
+PM2.5 and PM10 on a little screen. The numbers are right there — but there's no
+app, no cable, no way to get them out. The thing only knows how to display.
+
+So instead of trying to talk to the device, this just looks at it. A webcam
+takes a photo every few minutes, and an AI reads the digits the same way you
+would.
 
 ## How it works
 
-    capture.py  ──> captures/pending/2026-08-23T10-42-29Z.jpg
-                         │
-    process.py  ─────────┤  qwen3-vl-8b via LM Studio
-                         ├──> data/readings.db
-                         ├──> captures/processed/  (+ .json sidecar)
-                         └──> captures/failed/     (unreadable photos)
+    1. A webcam takes a photo of the monitor.
+    2. An AI running on this PC reads the six numbers off the screen.
+    3. The numbers go into a small database.
+    4. Wait a few minutes, then do it again.
 
-    analyze.py  ──> data/report.html   charts + overnight trend
-    readings.py ──> table on screen, or data/readings.csv
+That's the whole idea. One program, `watch.py`, does all four steps on a loop.
 
-Capture and processing are separate on purpose. The camera can keep shooting
-while LM Studio is closed; processing catches up later.
+Two details worth knowing:
 
-**Timestamps come from the filename, not the screen.** The device's own clock
-drifts and is never read. Filenames are UTC; reports convert to local time.
+**The photo is saved before the AI looks at it.** If the AI is closed or
+broken, the photo is still safe on disk and gets read later. A photo you never
+took is gone forever. A reading you haven't done yet is not.
 
-**Nothing is processed twice.** A photo moves out of `pending/` once it has
-been read, so the folder *is* the queue. `captured_at` is also a primary key,
-so a re-run cannot double-insert.
+**The time comes from the computer, not from the screen.** The monitor has its
+own clock, but it drifts — mine was already 12 seconds slow. Every photo is
+named with the exact moment it was taken, and that's what gets recorded.
 
-**One run at a time.** `process.py` takes an exclusive lock and refuses to
-start if another instance is going. Two concurrent runs race for the same
-photos and block each other on the database.
+## What you need
+
+- A webcam pointed at the monitor
+- [LM Studio](https://lmstudio.ai) with the `qwen/qwen3-vl-8b` model loaded
+- Python 3.11 or newer
+
+The AI runs entirely on your own machine. Nothing gets uploaded, nothing costs
+money, and it works with no internet.
 
 ## Setup
 
     python -m venv .venv
+    .venv\Scripts\activate
     pip install -r requirements.txt
     copy .env.example .env
 
-In LM Studio: load `qwen/qwen3-vl-8b`, then start the server on the
-**Developer** tab (default `http://localhost:1234`).
+Open `.env` and set `LOCAL_UTC_OFFSET` to your timezone — mine is `7`. That's
+the only setting you really need to touch.
 
-Set `LOCAL_UTC_OFFSET` in `.env` to your timezone — reports are drawn on that
-clock, and "night" only means anything locally.
+Then in LM Studio: load `qwen/qwen3-vl-8b` and start the server from the
+**Developer** tab.
 
-Commands below assume `.venv\Scripts\python.exe`; activate the venv first if
-you would rather just type `python`.
+## Using it
 
-## Use
+First, check what the camera can see:
 
-Check your framing first — this matters more than anything else below:
+    python capture.py --once
 
-    .venv\Scripts\python.exe capture.py --once
+Open that photo. Can you read every digit clearly? If yes, you're good. If it's
+blurry or there's glare on the glass, fix it now — it matters more than
+anything else here.
 
-Open the photo. Every digit must be legible, with no glare across the glass.
-Then start capturing, in its own terminal:
+Then start it and leave it running in its own window:
 
-    .venv\Scripts\python.exe capture.py --interval 5m     # also: 30s, 1m, 1h
-    .venv\Scripts\python.exe capture.py --interval 1m --count 10
+    python watch.py
 
-Read the queue whenever you like — at roughly 11s per photo:
+That's it. It takes a photo every 3 minutes, reads it, saves it, and keeps the
+report up to date. Press `Ctrl+C` to stop.
 
-    .venv\Scripts\python.exe process.py                   # read everything new
-    .venv\Scripts\python.exe process.py --dry-run         # print, change nothing
-    .venv\Scripts\python.exe process.py --limit 5         # try a handful first
-    .venv\Scripts\python.exe process.py --retry-failed    # re-read failed/
+Want a different gap between photos?
 
-## Looking at the data
+    python watch.py --interval 5m
+    python watch.py --interval 1m
 
-    .venv\Scripts\python.exe analyze.py --open            # everything, in browser
-    .venv\Scripts\python.exe analyze.py --last 6h         # also 30m, 2d
-    .venv\Scripts\python.exe analyze.py --today
-    .venv\Scripts\python.exe analyze.py --every 1h        # average into buckets
-    .venv\Scripts\python.exe analyze.py --night           # most recent night
-    .venv\Scripts\python.exe analyze.py --from "2026-08-23 11:00" --to "2026-08-23 12:30"
+Five minutes is a sensible default. Every minute gives you more detail, but
+uses a lot more disk space and a lot more of your GPU.
 
-`analyze.py` writes `data/report.html` — a single self-contained file holding:
+## Looking at your data
 
-- **tiles** — peak CO₂ and when, rate of change, temperature and humidity range
-- **a metric selector** — click *CO₂*, *Temperature*, *Humidity*, *AQI*,
-  *PM2.5* or *PM10* to blow that one up to full width; *All* returns to the grid
-- **a chart per metric**, with the peak labelled and a hover crosshair
-- **summary and trend** — readings, mean, min, max and slope per hour for each
-- **averages by hour**, and by day once the window covers more than a day
-- **every reading**, in a collapsible table
+    python analyze.py --open
 
-To open straight onto one metric rather than clicking:
+This builds a web page and opens it in your browser. You get:
 
-    .venv\Scripts\python.exe analyze.py --today --metric co2
-    .venv\Scripts\python.exe analyze.py --last 12h --metric humidity
+- Big numbers at the top — peak CO₂, whether it's rising or falling, the
+  temperature and humidity range
+- A chart for each measurement, which you can click to make bigger
+- Averages by hour
+- A table of every single reading
 
-Accepted names: `co2`, `temp`, `humidity`, `aqi`, `pm25`, `pm10`.
+It opens on **the last 24 hours**, not on "today". That's deliberate — you go
+to bed before midnight, so a calendar day would cut your night in half. Use the
+dropdown at the top to jump to a specific day instead.
 
-Windows stack with `--every`, which only averages the *charts* — the tables
-always summarise the real readings, so a bucket never hides a spike from the
-numbers.
+If you'd rather just see numbers in the terminal:
 
-Each metric gets its own plot rather than sharing an axis: CO₂ in the hundreds
-and AQI in single digits on one pair of y-axes would invent a correlation that
-is not in the data.
+    python readings.py            # the 20 most recent
+    python readings.py --csv      # save as a spreadsheet file
 
-For a quick look without the browser:
+## Where everything lives
 
-    .venv\Scripts\python.exe readings.py                  # 20 most recent
-    .venv\Scripts\python.exe readings.py --csv            # data/readings.csv
-
-## The data
-
-Everything lives in `data/readings.db`, one row per photo:
-
-| Column | |
+| Where | What |
 |---|---|
-| `captured_at` | UTC timestamp, primary key |
-| `image` | filename, findable in `captures/processed/` |
-| `aqi`, `temperature_c`, `humidity_pct`, `pm25`, `pm10`, `co2_ppm` | the readings |
-| `notes` | values rejected as implausible |
-| `recorded_at` | when the model read it |
+| `data/readings.db` | All your readings. This is the important one. |
+| `data/report.html` | The web page. Rebuilt automatically, safe to delete. |
+| `captures/pending/` | Photos waiting to be read |
+| `captures/processed/` | Photos that have been read |
+| `captures/failed/` | Photos the AI couldn't make sense of |
 
-It is a plain SQLite file — open it with any SQLite browser, or load it with
-pandas, which is what `analyze.py` does.
+Photos are never deleted, only moved. They add up fast — roughly 25 MB a day —
+so clear out `captures/processed/` now and then if space gets tight. Your
+readings are already in the database, so deleting old photos is safe.
 
-Each processed photo also gets a `.json` sidecar beside it holding exactly what
-the model returned. That is both the place to look when a number seems wrong
-and a full backup of the database:
+## Getting clear photos
 
-    .venv\Scripts\python.exe rebuild.py --dry-run
-    .venv\Scripts\python.exe rebuild.py     # replay sidecars into the db
+The AI can only read what the camera can see. In order of how much each one
+helps:
 
-## Getting good reads
+1. **Point the camera straight at the screen**, not up from below. At an angle,
+   an `8` starts to look like a `0`.
+2. **No lamp or window behind the camera.** The screen is glossy, and a
+   reflection across the bottom row will wipe out PM2.5 and PM10.
+3. **Get close.** The screen should fill most of the photo.
+4. **Tape the camera down** once it looks right. Keeping the framing identical
+   is most of the accuracy.
 
-The model is only as good as the photo. In rough order of impact:
+If the AI can't read a number, it saves a blank instead of guessing. If a
+number comes back impossible — like CO₂ at 12 ppm — it gets thrown out and
+noted. A gap in your data can be filled in later. A wrong number that looks
+real cannot.
 
-- **Square-on.** Shoot the display straight, not from below. An angled
-  seven-segment digit is where `8` becomes `0`.
-- **Kill the reflection.** No lamp or window behind the camera. The glass is
-  glossy and a highlight across the bottom row will take out PM2.5 and PM10.
-- **Fill the frame.** The display should be most of the picture.
-- **Fix the camera in place.** Once framing is right, tape it down. Consistent
-  framing is most of the accuracy.
+## If something goes wrong
 
-A value the model cannot read comes back as `NULL`, and one that is physically
-implausible is rejected into `notes` rather than stored — a gap in the series
-is recoverable, a wrong number silently logged is not. Gaps break the chart
-line rather than being bridged, so missing data never looks measured.
+**Photos piling up in `pending/`?** LM Studio probably isn't running. Start it,
+and they'll get read automatically.
 
-## Files
+**Want to catch up quickly?** `python process.py` reads everything that's
+waiting, faster than the loop manages.
 
-| File | Role |
+**Lost the database?** `python rebuild.py` puts it back together from the small
+`.json` files saved next to each photo.
+
+## The files
+
+| File | What it does |
 |---|---|
-| `capture.py` | Webcam, interval loop, timestamped filenames |
-| `process.py` | Batch: extract → validate → store |
-| `extract.py` | Prompt, LM Studio call, plausibility checks |
-| `store.py` | SQLite ledger |
-| `analyze.py` | pandas analysis, window selection, stats |
-| `report.py` | HTML + inline-SVG rendering |
-| `readings.py` | Terminal table, CSV export |
-| `rebuild.py` | Restore the database from sidecars |
-| `config.py` | Paths and `.env` settings |
+| `watch.py` | The main loop — photo, read, save, wait |
+| `capture.py` | Takes photos |
+| `process.py` | Reads photos that are waiting |
+| `extract.py` | Asks the AI to read a photo |
+| `store.py` | Saves readings to the database |
+| `analyze.py` | Builds the report |
+| `report.py` | Draws the charts |
+| `readings.py` | Shows readings in the terminal |
+| `rebuild.py` | Rebuilds the database from photo files |
+| `config.py` | Settings |

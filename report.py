@@ -86,6 +86,22 @@ h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em
   margin-left: 3px; letter-spacing: 0; }
 .tile .note { font-size: 13px; color: var(--ink-2); margin-top: 4px; }
 
+.daybar { display: flex; align-items: center; gap: 8px; margin: 0 0 18px; flex-wrap: wrap; }
+.daybar select {
+  font: inherit; font-size: 14px; padding: 6px 10px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--ink);
+}
+.daybar button {
+  font: inherit; font-size: 15px; line-height: 1; width: 32px; height: 32px;
+  border-radius: 8px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--ink-2); cursor: pointer;
+}
+.daybar button:hover:not(:disabled) { color: var(--ink); }
+.daybar button:disabled { opacity: 0.35; cursor: default; }
+.daymeta { font-size: 13px; color: var(--muted); }
+.day { display: none; }
+.day.on { display: block; }
+
 .filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }
 .filters button {
   font: inherit; font-size: 13px; padding: 5px 13px; border-radius: 999px;
@@ -189,8 +205,10 @@ document.querySelectorAll('.chart').forEach(function (fig) {
   hit.addEventListener('touchmove', function (e) { show(e.touches[0]); }, {passive: true});
 });
 
-var filters = document.querySelector('.filters');
-if (filters) {
+// Each day pane carries its own metric selector, so scope the lookup to the
+// pane rather than the document -- otherwise every day would share one state.
+document.querySelectorAll('.filters').forEach(function (filters) {
+  var scope = filters.closest('.day') || document;
   filters.addEventListener('click', function (evt) {
     var button = evt.target.closest('button');
     if (!button) return;
@@ -198,14 +216,43 @@ if (filters) {
     filters.querySelectorAll('button').forEach(function (other) {
       other.setAttribute('aria-pressed', other === button ? 'true' : 'false');
     });
-    var grid = document.querySelector('.charts');
-    var focus = document.querySelector('.focus');
+    var grid = scope.querySelector('.charts');
+    var focus = scope.querySelector('.focus');
     grid.classList.toggle('off', wanted !== 'all');
     focus.classList.toggle('on', wanted !== 'all');
     focus.querySelectorAll('[data-metric]').forEach(function (panel) {
       panel.style.display = panel.dataset.metric === wanted ? '' : 'none';
     });
   });
+});
+
+var daybar = document.querySelector('.daybar');
+if (daybar) {
+  var picker = daybar.querySelector('select');
+  var panes = document.querySelectorAll('.day');
+  var stepButtons = daybar.querySelectorAll('button[data-step]');
+
+  function showDay(value) {
+    panes.forEach(function (pane) {
+      pane.classList.toggle('on', pane.dataset.day === value);
+    });
+    picker.value = value;
+    stepButtons.forEach(function (button) {
+      var target = picker.selectedIndex + Number(button.dataset.step);
+      button.disabled = target < 0 || target >= picker.options.length;
+    });
+  }
+
+  picker.addEventListener('change', function () { showDay(picker.value); });
+  stepButtons.forEach(function (button) {
+    button.addEventListener('click', function () {
+      var target = picker.selectedIndex + Number(button.dataset.step);
+      if (target >= 0 && target < picker.options.length) {
+        showDay(picker.options[target].value);
+      }
+    });
+  });
+  showDay(picker.value);
 }
 """
 
@@ -352,6 +399,28 @@ def line_chart(name: str, unit: str, samples: list[tuple[datetime, float | None]
     )
 
 
+def day_bar(days: list[tuple[str, str]], active: str, meta: str = "") -> str:
+    """Older / view dropdown / newer. `days` is (value, label), NEWEST first.
+
+    The list runs newest-first because that is what a reader expects to see at
+    the top of a date dropdown, so stepping *down* it goes back in time -- hence
+    the older arrow steps +1 and the newer arrow -1.
+    """
+    options = "".join(
+        f'<option value="{html.escape(value)}"'
+        f'{" selected" if value == active else ""}>{html.escape(label)}</option>'
+        for value, label in days
+    )
+    return (
+        '<div class="daybar">'
+        '<button type="button" data-step="1" aria-label="Older">&lsaquo;</button>'
+        f'<select aria-label="Choose what to show">{options}</select>'
+        '<button type="button" data-step="-1" aria-label="Newer">&rsaquo;</button>'
+        f'<span class="daymeta">{html.escape(meta)}</span>'
+        '</div>'
+    )
+
+
 def filter_row(options: list[tuple[str, str]], active: str) -> str:
     """One row of metric pills above the charts. `options` is (key, label)."""
     buttons = "".join(
@@ -392,8 +461,7 @@ def section(title: str, body: str, collapsed: bool | None = None) -> str:
     return (f'<section class="panel"><h2>{html.escape(title)}</h2>{body}</section>')
 
 
-def page(title: str, subtitle: str, tiles: str, charts: str,
-         sections: str, footer: str) -> str:
+def page(title: str, subtitle: str, body: str, footer: str) -> str:
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -408,9 +476,7 @@ def page(title: str, subtitle: str, tiles: str, charts: str,
   <h1>{html.escape(title)}</h1>
   <p class="sub">{html.escape(subtitle)}</p>
 </header>
-{tiles}
-{charts}
-{sections}
+{body}
 <footer>{html.escape(footer)}</footer>
 </div>
 <script>{SCRIPT}</script>

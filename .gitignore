@@ -1,6 +1,23 @@
+# Environment
 .env
 .venv/
 __pycache__/
 *.pyc
+
+# Photos. Currently 126 MB and growing ~25 MB/day at a 3-minute interval --
+# far past what belongs in a repo. Everything they contain has already been
+# extracted into data/readings.db, which IS tracked.
 captures/
-data/
+
+# SQLite side files: transient, machine-local, and never safe to commit.
+# readings.db-wal in particular is a partial log, not a database.
+data/readings.db-wal
+data/readings.db-shm
+data/process.lock
+
+# Derived. Regenerate any time with analyze.py / readings.py --csv.
+data/report.html
+data/readings.csv
+
+# Deliberately NOT ignored: data/readings.db -- the readings themselves,
+# ~85 KB today and about 25 MB per year.

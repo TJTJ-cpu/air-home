@@ -235,6 +235,53 @@ def build_table(frame: pd.DataFrame) -> str:
     return report.table(rows, columns)
 
 
+ROLLING_KEY = "last24"
+ROLLING_LABEL = "Last 24 hours"
+
+
+def pane_span(frame: pd.DataFrame) -> str:
+    """Readable span, showing dates only when the window crosses midnight."""
+    first, last = frame.index.min(), frame.index.max()
+    if first.date() == last.date():
+        return f"{first:%H:%M} → {last:%H:%M}"
+    return f"{first:%d %b %H:%M} → {last:%d %b %H:%M}"
+
+
+def day_pane(frame: pd.DataFrame, value: str, active: str, metric: str) -> str:
+    """Everything for one view: tiles, charts, tables -- as one hidden pane."""
+    charted, _ = auto_bucket(frame)
+    body = (
+        build_tiles(frame)
+        + build_filters(charted, metric)
+        + build_charts(charted, metric)
+        + build_focus(charted, metric)
+        + report.section("Summary and trend", summary_table(frame))
+        + report.section("Averages by hour",
+                         averages_table(frame, pd.Timedelta(hours=1), "%H:00"),
+                         collapsed=False)
+        + report.section(f"All {len(frame)} readings", build_table(frame), collapsed=True)
+    )
+    on = " on" if value == active else ""
+    return f'<div class="day{on}" data-day="{value}">{body}</div>'
+
+
+def by_day(frame: pd.DataFrame, keep: int):
+    """Per-day frames, most recent `keep` days, NEWEST first."""
+    days = sorted({stamp.date() for stamp in frame.index})[-keep:]
+    return [(day, frame.loc[[s.date() == day for s in frame.index]])
+            for day in reversed(days)]
+
+
+def rolling_window(frame: pd.DataFrame, hours: int = 24) -> pd.DataFrame:
+    """The last N hours of readings.
+
+    Anchored to the newest reading rather than the wall clock: if capture has
+    been stopped for a while, you still want the last 24 hours that exist, not
+    a mostly-empty window.
+    """
+    return frame.loc[frame.index >= frame.index.max() - pd.Timedelta(hours=hours)]
+
+
 def choose_window(frame: pd.DataFrame, args) -> tuple[pd.DataFrame, str]:
     """Slice the readings per the flags. Default is everything collected."""
     if args.start or args.end:
@@ -266,7 +313,7 @@ def choose_window(frame: pd.DataFrame, args) -> tuple[pd.DataFrame, str]:
     return frame, "All readings"
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--last", help="a span back from the newest reading: 30m, 6h, 2d")
     parser.add_argument("--today", action="store_true", help="since local midnight")
@@ -276,13 +323,20 @@ def main() -> int:
     parser.add_argument("--to", dest="end", help="window end, local time")
     parser.add_argument("--every", metavar="SPAN",
                         help="average the charts into buckets: 5min, 1h, 1d")
-    parser.add_argument("--all", action="store_true", help="everything (the default)")
+    parser.add_argument("--all", action="store_true",
+                        help="one window over every reading, instead of by day")
+    parser.add_argument("--date", metavar="WHEN",
+                        help="open on a given day (YYYY-MM-DD), or 'last24' for the "
+                             "rolling 24-hour view. Default: last24")
+    parser.add_argument("--days", type=int, default=7,
+                        help="how many recent days to include in the picker. Default 7")
     parser.add_argument("--metric", default="all", metavar="NAME",
                         help="open focused on one metric: co2, temp, humidity, "
                              "aqi, pm25, pm10")
     parser.add_argument("--output", type=Path, default=config.DATA / "report.html")
     parser.add_argument("--open", action="store_true", help="open in the browser when done")
-    args = parser.parse_args()
+    parser.add_argument("--quiet", action="store_true", help="suppress the wrote-file line")
+    args = parser.parse_args(argv)
 
     active = METRIC_ALIASES.get(args.metric.strip().lower())
     if active is None:
@@ -299,56 +353,94 @@ def main() -> int:
         print("no readings yet -- run process.py first")
         return 1
 
-    window, label = choose_window(frame, args)
-    if window.empty:
-        print("no readings in that window")
-        return 1
+    single_window = bool(args.all or args.last or args.today or args.start
+                         or args.end or args.night is not None)
 
-    # Tables summarise the real readings; only the charts get averaged down.
-    raw = window
-    if args.every:
-        try:
-            rule = pd.Timedelta(args.every)
-        except ValueError:
-            print(f"bad --every value {args.every!r}; try 5min, 1h, 1d")
+    if single_window:
+        window, label = choose_window(frame, args)
+        if window.empty:
+            print("no readings in that window")
             return 1
-        charted, note = bucket(window, rule)[0], f"charts averaged every {args.every}"
+        raw = window
+        if args.every:
+            try:
+                rule = pd.Timedelta(args.every)
+            except ValueError:
+                print(f"bad --every value {args.every!r}; try 5min, 1h, 1d")
+                return 1
+            charted, note = bucket(raw, rule)[0], f"charts averaged every {args.every}"
+        else:
+            charted, note = auto_bucket(raw)
+
+        hours = (raw.index.max() - raw.index.min()).total_seconds() / 3600
+        sections = [
+            report.section("Summary and trend", summary_table(raw)),
+            report.section("Averages by hour",
+                           averages_table(raw, pd.Timedelta(hours=1), "%d %b %H:00"),
+                           collapsed=False),
+        ]
+        if hours >= 24:
+            sections.append(report.section(
+                "Averages by day",
+                averages_table(raw, pd.Timedelta(days=1), "%a %d %b"), collapsed=False))
+        sections.append(report.section(f"All {len(raw)} readings",
+                                       build_table(raw), collapsed=True))
+        body = (build_tiles(raw) + build_filters(charted, active)
+                + build_charts(charted, active) + build_focus(charted, active)
+                + "".join(sections))
+        subtitle = (f"{raw.index.min():%d %b %H:%M} → {raw.index.max():%d %b %H:%M} local"
+                    f" · {hours:.1f}h · {len(raw)} readings")
+        if note:
+            subtitle += f" · {note}"
+        summary_line = f"{len(raw)} readings, {label.lower()}"
+
     else:
-        charted, note = auto_bucket(window)
+        # Day mode: a rolling 24h view plus one pane per calendar day. The
+        # rolling view leads because sleep crosses midnight -- a calendar day
+        # cuts the night in half, which is exactly what you want to see whole.
+        days = by_day(frame, max(1, args.days))
+        available = [day for day, _ in days]
+        if args.date and args.date.lower() not in (ROLLING_KEY, "24h"):
+            try:
+                wanted = datetime.strptime(args.date, "%Y-%m-%d").date()
+            except ValueError:
+                print(f"bad --date {args.date!r}; use YYYY-MM-DD or last24")
+                return 1
+            if wanted not in available:
+                have = ", ".join(d.isoformat() for d in available)
+                print(f"no readings on {wanted}. Days available: {have}")
+                return 1
+            active_key = wanted.isoformat()
+            chosen = dict(days)[wanted]
+            label = wanted.strftime("%a %d %b %Y")
+        else:
+            active_key = ROLLING_KEY
+            chosen = rolling_window(frame)
+            label = ROLLING_LABEL
 
-    first, last = raw.index.min(), raw.index.max()
-    hours = (last - first).total_seconds() / 3600
-    subtitle = (f"{first.strftime('%d %b %H:%M')} → {last.strftime('%d %b %H:%M')} local"
-                f" · {hours:.1f}h · {len(raw)} readings")
-    if note:
-        subtitle += f" · {note}"
+        panes = day_pane(rolling_window(frame), ROLLING_KEY, active_key, active)
+        panes += "".join(day_pane(subset, day.isoformat(), active_key, active)
+                         for day, subset in days)
+        options = [(ROLLING_KEY, ROLLING_LABEL)]
+        options += [(day.isoformat(), day.strftime("%a %d %b %Y")) for day in available]
+        body = report.day_bar(options, active_key,
+                              meta=f"{len(available)} day(s) with readings") + panes
 
-    sections = [
-        report.section("Summary and trend", summary_table(raw)),
-        report.section("Averages by hour",
-                       averages_table(raw, pd.Timedelta(hours=1), "%d %b %H:00"),
-                       collapsed=False),
-    ]
-    if hours >= 24:
-        sections.append(report.section(
-            "Averages by day",
-            averages_table(raw, pd.Timedelta(days=1), "%a %d %b"), collapsed=False))
-    sections.append(report.section(f"All {len(raw)} readings",
-                                   build_table(raw), collapsed=True))
+        subtitle = (f"{pane_span(chosen)} local · {len(chosen)} readings"
+                    f" · {len(frame)} in total across {len(available)} day(s)")
+        summary_line = f"{len(chosen)} readings, {label.lower()}"
 
     html_text = report.page(
-        title=f"air-home — {label}",
+        title="air-home" if not single_window else f"air-home — {label}",
         subtitle=subtitle,
-        tiles=build_tiles(raw),
-        charts=build_filters(charted, active) + build_charts(charted, active)
-               + build_focus(charted, active),
-        sections="".join(sections),
+        body=body,
         footer=f"Generated {datetime.now(LOCAL_TZ).strftime('%Y-%m-%d %H:%M')} local "
                f"(UTC{config.LOCAL_UTC_OFFSET:+g}) from {config.DB_PATH.name}",
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(html_text, encoding="utf-8")
-    print(f"wrote {args.output}  ({len(raw)} readings, {label.lower()})")
+    if not args.quiet:
+        print(f"wrote {args.output}  ({summary_line})")
 
     if args.open:
         webbrowser.open(args.output.resolve().as_uri())

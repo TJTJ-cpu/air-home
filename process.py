@@ -8,6 +8,9 @@ nothing is ever read twice.
     python process.py
     python process.py --limit 20
     python process.py --retry-failed
+
+`watch.py` runs the capture and this step together in one loop; this script
+stays useful for draining a backlog or re-reading failures.
 """
 from __future__ import annotations
 
@@ -86,8 +89,8 @@ def single_instance():
             pass
         handle.close()
         print(
-            f"another process.py is already running (pid {holder}).\n"
-            "Wait for it to finish, or stop it, then re-run.",
+            f"another run is already going (pid {holder}).\n"
+            "Wait for it to finish, or stop it, then try again.",
             file=sys.stderr,
         )
         raise SystemExit(1)
@@ -138,6 +141,50 @@ def _summarise(reading: dict) -> str:
     return " ".join(parts)
 
 
+def process_one(conn, image: Path, dry_run: bool = False) -> tuple[str, str]:
+    """Read one photo, store the reading, file the photo away.
+
+    Returns (status, message) where status is saved / duplicate / unreadable /
+    failed / dry. A transient ExtractionError is re-raised rather than handled,
+    so the caller decides what to do about a server that is down -- the photo
+    stays exactly where it is, because there is nothing wrong with the photo.
+    """
+    stamp = captured_at(image)
+    try:
+        reading, notes = extract(image)
+    except ExtractionError as exc:
+        if exc.transient:
+            raise
+        if not dry_run:
+            _move(image, config.FAILED, {"captured_at": stamp, "error": str(exc)})
+        return "failed", str(exc)
+
+    sidecar = {
+        "captured_at": stamp,
+        "image": image.name,
+        "model": config.LMSTUDIO_MODEL,
+        "reading": reading,
+        "notes": notes,
+    }
+
+    if all(value is None for value in reading.values()):
+        if not dry_run:
+            _move(image, config.FAILED, sidecar)
+        return "unreadable", "no values recognised"
+
+    message = _summarise(reading) + (f"   ({'; '.join(notes)})" if notes else "")
+    if dry_run:
+        return "dry", message
+
+    saved = store.save(conn, stamp, image.name, reading, notes)
+    # Commit before the photo leaves the queue. If this dies here, the photo is
+    # still in pending/ and gets re-read -- never the other way round, which
+    # would lose the reading for good.
+    conn.commit()
+    _move(image, config.PROCESSED, sidecar)
+    return ("saved" if saved else "duplicate"), message
+
+
 def _too_many_failures(count: int) -> bool:
     if count < ABORT_AFTER:
         return False
@@ -179,63 +226,28 @@ def main() -> int:
     # A dry run never opens the database -- connecting would create the file.
     with (nullcontext(None) if args.dry_run else store.connect()) as conn:
         for image in images:
-            stamp = captured_at(image)
             try:
-                reading, notes = extract(image)
+                status, message = process_one(conn, image, args.dry_run)
             except ExtractionError as exc:
-                if exc.transient:
-                    # The server is the problem, not this photo. Leave it and
-                    # every photo after it exactly where they are.
-                    print(f"  {image.name}  {exc}", file=sys.stderr)
-                    print(
-                        "\naborting -- no further photos were touched. "
-                        "Start LM Studio, then re-run.",
-                        file=sys.stderr,
-                    )
-                    return 1
+                print(f"  {image.name}  {exc}", file=sys.stderr)
+                print("\naborting -- no further photos were touched. "
+                      "Start LM Studio, then re-run.", file=sys.stderr)
+                return 1
+
+            if status in ("failed", "unreadable"):
                 consecutive_failures += 1
                 failed += 1
-                print(f"  {image.name}  FAILED: {exc}")
-                if not args.dry_run:
-                    _move(image, config.FAILED, {"captured_at": stamp, "error": str(exc)})
-                if _too_many_failures(consecutive_failures):
-                    return 1
-                continue
-
-            sidecar = {
-                "captured_at": stamp,
-                "image": image.name,
-                "model": config.LMSTUDIO_MODEL,
-                "reading": reading,
-                "notes": notes,
-            }
-
-            if all(value is None for value in reading.values()):
-                consecutive_failures += 1
-                failed += 1
-                print(f"  {image.name}  UNREADABLE: no values recognised")
-                if not args.dry_run:
-                    _move(image, config.FAILED, sidecar)
+                print(f"  {image.name}  {status.upper()}: {message}")
                 if _too_many_failures(consecutive_failures):
                     return 1
                 continue
 
             consecutive_failures = 0
-            note_text = f"   ({'; '.join(notes)})" if notes else ""
-            print(f"  {image.name}  {_summarise(reading)}{note_text}")
-
-            if args.dry_run:
-                continue
-
-            if store.save(conn, stamp, image.name, reading, notes):
+            if status == "saved":
                 saved += 1
-            else:
-                skipped += 1  # this timestamp was already recorded
-            # Commit before the photo leaves the queue. If this run dies here,
-            # the photo is still in pending/ and gets re-read -- never the
-            # other way round, which would lose the reading for good.
-            conn.commit()
-            _move(image, config.PROCESSED, sidecar)
+            elif status == "duplicate":
+                skipped += 1
+            print(f"  {image.name}  {message}")
 
         if args.dry_run:
             print(f"\nread {len(images)}, failed {failed} -- dry run, nothing written")
@@ -247,6 +259,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    args_need_lock = "--dry-run" not in sys.argv
-    with (single_instance() if args_need_lock else nullcontext()):
+    # Asking for --help, or a dry run, does no work and must not be blocked by
+    # a run that is already going.
+    _no_work = {"-h", "--help"}.intersection(sys.argv) or "--dry-run" in sys.argv
+    with (nullcontext() if _no_work else single_instance()):
         raise SystemExit(main())
