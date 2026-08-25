@@ -32,8 +32,16 @@ CAMERA_HEIGHT = _int("CAMERA_HEIGHT", None)
 # Readings are stored in UTC. Analysis is done in local time, because "the
 # trend across the night" only means anything on a local clock.
 LOCAL_UTC_OFFSET = float(os.getenv("LOCAL_UTC_OFFSET", "7"))
-NIGHT_START_HOUR = _int("NIGHT_START_HOUR", 22)
-NIGHT_END_HOUR = _int("NIGHT_END_HOUR", 6)
+# A "night" runs from the evening of one day into the next morning, so it
+# survives midnight -- which is the whole point of having it. The window is
+# deliberately wider than sleep itself: the hour before bed gives a baseline to
+# measure the climb against, and the hour after waking shows how fast the room
+# clears once the door opens.
+NIGHT_START_HOUR = _int("NIGHT_START_HOUR", 20)
+NIGHT_END_HOUR = _int("NIGHT_END_HOUR", 9)
+# Optional, yours to write: {"2026-08-24": "window open 10cm"}. Keyed by the
+# evening the night began. Blank or missing simply shows no label.
+NIGHT_LABELS = DATA / "night_labels.json"
 
 LMSTUDIO_BASE_URL = os.getenv("LMSTUDIO_BASE_URL", "http://localhost:1234/v1")
 LMSTUDIO_MODEL = os.getenv("LMSTUDIO_MODEL", "qwen/qwen3-vl-8b")

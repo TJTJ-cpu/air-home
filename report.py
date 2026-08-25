@@ -399,22 +399,28 @@ def line_chart(name: str, unit: str, samples: list[tuple[datetime, float | None]
     )
 
 
-def day_bar(days: list[tuple[str, str]], active: str, meta: str = "") -> str:
-    """Older / view dropdown / newer. `days` is (value, label), NEWEST first.
+def day_bar(groups: list[tuple[str, list[tuple[str, str]]]], active: str,
+            meta: str = "") -> str:
+    """Older / view dropdown / newer.
 
-    The list runs newest-first because that is what a reader expects to see at
-    the top of a date dropdown, so stepping *down* it goes back in time -- hence
-    the older arrow steps +1 and the newer arrow -1.
+    `groups` is [(group name, [(value, label), ...]), ...] in display order,
+    newest first, so stepping *down* the list goes back in time -- hence the
+    older arrow steps +1 and the newer arrow -1.
     """
-    options = "".join(
-        f'<option value="{html.escape(value)}"'
-        f'{" selected" if value == active else ""}>{html.escape(label)}</option>'
-        for value, label in days
-    )
+    blocks = []
+    for name, options in groups:
+        if not options:
+            continue
+        items = "".join(
+            f'<option value="{html.escape(value)}"'
+            f'{" selected" if value == active else ""}>{html.escape(label)}</option>'
+            for value, label in options
+        )
+        blocks.append(f'<optgroup label="{html.escape(name)}">{items}</optgroup>')
     return (
         '<div class="daybar">'
         '<button type="button" data-step="1" aria-label="Older">&lsaquo;</button>'
-        f'<select aria-label="Choose what to show">{options}</select>'
+        f'<select aria-label="Choose what to show">{"".join(blocks)}</select>'
         '<button type="button" data-step="-1" aria-label="Newer">&rsaquo;</button>'
         f'<span class="daymeta">{html.escape(meta)}</span>'
         '</div>'

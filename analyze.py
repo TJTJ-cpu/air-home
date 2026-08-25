@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sqlite3
 import webbrowser
 from datetime import datetime, timedelta, timezone
@@ -37,6 +38,8 @@ METRIC_COLUMNS = [(field, f"{label}{unit}".strip())
 
 LOCAL_TZ = timezone(timedelta(hours=config.LOCAL_UTC_OFFSET))
 MAX_POINTS = 480  # beyond this an SVG line is denser than the screen can show
+# A night needs at least this much data before it is worth comparing.
+MIN_NIGHT_READINGS, MIN_NIGHT_HOURS = 20, 2.0
 # The focused single-metric chart is re-rendered at these dimensions.
 FOCUS_WIDTH, FOCUS_PLOT_H = 1060, 300
 
@@ -237,6 +240,10 @@ def build_table(frame: pd.DataFrame) -> str:
 
 ROLLING_KEY = "last24"
 ROLLING_LABEL = "Last 24 hours"
+ALLTIME_KEY = "alltime"
+ALLTIME_LABEL = "All time"
+# The all-time table is capped; the whole history is in the database.
+ALLTIME_TABLE_LIMIT = 500
 
 
 def pane_span(frame: pd.DataFrame) -> str:
@@ -247,22 +254,131 @@ def pane_span(frame: pd.DataFrame) -> str:
     return f"{first:%d %b %H:%M} → {last:%d %b %H:%M}"
 
 
-def day_pane(frame: pd.DataFrame, value: str, active: str, metric: str) -> str:
-    """Everything for one view: tiles, charts, tables -- as one hidden pane."""
+def day_pane(frame: pd.DataFrame, value: str, active: str, metric: str,
+             extra: str = "", averages: str = "hour",
+             table_limit: int | None = None) -> str:
+    """Everything for one view: tiles, charts, tables -- as one hidden pane.
+
+    `averages` picks hourly or daily buckets: hourly rows over months would be
+    thousands long. `table_limit` caps the raw table for the same reason -- the
+    full history lives in the database and the CSV export, not in the page.
+    """
     charted, _ = auto_bucket(frame)
+    if averages == "day":
+        summary = report.section("Averages by day",
+                                 averages_table(frame, pd.Timedelta(days=1), "%a %d %b"),
+                                 collapsed=False)
+    else:
+        summary = report.section("Averages by hour",
+                                 averages_table(frame, pd.Timedelta(hours=1), "%H:00"),
+                                 collapsed=False)
+    shown = frame if table_limit is None else frame.iloc[-table_limit:]
+    title = (f"All {len(frame)} readings" if table_limit is None or len(frame) <= table_limit
+             else f"Most recent {len(shown)} of {len(frame)} readings")
     body = (
         build_tiles(frame)
         + build_filters(charted, metric)
         + build_charts(charted, metric)
         + build_focus(charted, metric)
         + report.section("Summary and trend", summary_table(frame))
-        + report.section("Averages by hour",
-                         averages_table(frame, pd.Timedelta(hours=1), "%H:00"),
-                         collapsed=False)
-        + report.section(f"All {len(frame)} readings", build_table(frame), collapsed=True)
+        + summary
+        + extra
+        + report.section(title, build_table(shown), collapsed=True)
     )
     on = " on" if value == active else ""
     return f'<div class="day{on}" data-day="{value}">{body}</div>'
+
+
+def night_labels() -> dict:
+    """Optional notes describing what you changed each night."""
+    if not config.NIGHT_LABELS.exists():
+        return {}
+    try:
+        raw = json.loads(config.NIGHT_LABELS.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+    # Blank entries are placeholders waiting to be filled in, not labels.
+    return {key: value for key, value in raw.items() if str(value).strip()}
+
+
+def nights(frame: pd.DataFrame, keep: int):
+    """Per-night frames, newest first. A night is keyed by the evening it began.
+
+    Only nights with a decent amount of data are returned -- a night you were
+    only capturing for twenty minutes of is noise in a comparison, not a result.
+    """
+    found = []
+    evenings = sorted({stamp.date() for stamp in frame.index}, reverse=True)
+    for evening in evenings:
+        start, end = night_bounds(evening)
+        subset = frame.loc[(frame.index >= start) & (frame.index < end)]
+        span = ((subset.index.max() - subset.index.min()).total_seconds() / 3600
+                if len(subset) else 0)
+        if len(subset) >= MIN_NIGHT_READINGS and span >= MIN_NIGHT_HOURS:
+            found.append((evening, subset))
+    return found[:keep]
+
+
+def night_stats(frame: pd.DataFrame) -> dict:
+    """The numbers that make one night comparable with another."""
+    co2 = frame["co2_ppm"].dropna()
+    span = (frame.index.max() - frame.index.min()).total_seconds() / 3600
+    stats = {
+        "readings": len(frame),
+        "hours": span,
+        "start": None, "peak": None, "peak_at": None, "mean": None,
+        "rise": None, "above": None,
+    }
+    if co2.empty:
+        return stats
+    # Median of the first half hour, so one misread digit cannot define the
+    # baseline the whole night is measured against.
+    opening = co2.loc[co2.index <= co2.index.min() + pd.Timedelta(minutes=30)]
+    stats["start"] = float(opening.median())
+    stats["peak"] = float(co2.max())
+    stats["peak_at"] = co2.idxmax()
+    stats["mean"] = float(co2.mean())
+    climb = (stats["peak_at"] - co2.index.min()).total_seconds() / 3600
+    if climb > 0:
+        stats["rise"] = (stats["peak"] - stats["start"]) / climb
+    # Share of the night over 1000 ppm, scaled to hours.
+    stats["above"] = float((co2 > 1000).mean()) * span
+    return stats
+
+
+def nights_table(found: list, labels: dict) -> str:
+    """One row per night, with each night measured against the first one."""
+    rows = []
+    baseline = None
+    for evening, subset in reversed(found):  # oldest first: it is the control
+        stats = night_stats(subset)
+        if baseline is None and stats["peak"] is not None:
+            baseline = stats
+        change = "-"
+        if baseline is not None and stats["peak"] is not None and stats is not baseline:
+            delta = (stats["peak"] - baseline["peak"]) / baseline["peak"] * 100
+            change = f"{delta:+.0f}%"
+        rows.append({
+            "night": evening.strftime("%a %d %b"),
+            "what": labels.get(evening.isoformat()) or "-",
+            "n": stats["readings"],
+            "hours": f"{stats['hours']:.1f}",
+            "start": fmt(stats["start"], 0),
+            "peak": fmt(stats["peak"], 0),
+            "peak_at": stats["peak_at"].strftime("%H:%M") if stats["peak_at"] is not None else "-",
+            "mean": fmt(stats["mean"], 0),
+            "rise": fmt(stats["rise"], 0) if stats["rise"] is not None else "-",
+            "above": f"{stats['above']:.1f}" if stats["above"] is not None else "-",
+            "change": change,
+        })
+    rows.reverse()  # display newest first, like everything else
+    columns = [
+        ("night", "Night"), ("what", "What changed"), ("n", "Readings"),
+        ("hours", "Hours"), ("start", "CO₂ start"), ("peak", "CO₂ peak"),
+        ("peak_at", "Peak at"), ("mean", "CO₂ mean"), ("rise", "Rise ppm/h"),
+        ("above", "Hours >1000"), ("change", "Peak vs first"),
+    ]
+    return report.table(rows, columns)
 
 
 def by_day(frame: pd.DataFrame, keep: int):
@@ -280,6 +396,37 @@ def rolling_window(frame: pd.DataFrame, hours: int = 24) -> pd.DataFrame:
     a mostly-empty window.
     """
     return frame.loc[frame.index >= frame.index.max() - pd.Timedelta(hours=hours)]
+
+
+def export_nights(frame: pd.DataFrame, path: Path, keep: int) -> int:
+    """One row per night, for loading into pandas or a spreadsheet later."""
+    found = nights(frame, keep)
+    if not found:
+        print("no nights with enough data yet")
+        return 1
+    labels = night_labels()
+    rows = []
+    for evening, subset in reversed(found):
+        stats = night_stats(subset)
+        rows.append({
+            "night": evening.isoformat(),
+            "label": labels.get(evening.isoformat(), ""),
+            "readings": stats["readings"],
+            "hours": round(stats["hours"], 2),
+            "co2_start": stats["start"],
+            "co2_peak": stats["peak"],
+            "co2_peak_at": stats["peak_at"].strftime("%H:%M") if stats["peak_at"] is not None else "",
+            "co2_mean": round(stats["mean"], 1) if stats["mean"] is not None else "",
+            "co2_rise_per_hour": round(stats["rise"], 1) if stats["rise"] is not None else "",
+            "hours_above_1000": round(stats["above"], 2) if stats["above"] is not None else "",
+            "temp_min": subset["temperature_c"].min(),
+            "temp_max": subset["temperature_c"].max(),
+            "humidity_mean": round(subset["humidity_pct"].mean(), 1),
+        })
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(rows).to_csv(path, index=False)
+    print(f"wrote {path}  ({len(rows)} night(s))")
+    return 0
 
 
 def choose_window(frame: pd.DataFrame, args) -> tuple[pd.DataFrame, str]:
@@ -324,7 +471,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--every", metavar="SPAN",
                         help="average the charts into buckets: 5min, 1h, 1d")
     parser.add_argument("--all", action="store_true",
-                        help="one window over every reading, instead of by day")
+                        help="open on the all-time view")
     parser.add_argument("--date", metavar="WHEN",
                         help="open on a given day (YYYY-MM-DD), or 'last24' for the "
                              "rolling 24-hour view. Default: last24")
@@ -333,6 +480,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--metric", default="all", metavar="NAME",
                         help="open focused on one metric: co2, temp, humidity, "
                              "aqi, pm25, pm10")
+    parser.add_argument("--export-nights", type=Path, metavar="PATH", nargs="?",
+                        const=config.DATA / "nights.csv",
+                        help="write the night comparison to CSV and exit")
     parser.add_argument("--output", type=Path, default=config.DATA / "report.html")
     parser.add_argument("--open", action="store_true", help="open in the browser when done")
     parser.add_argument("--quiet", action="store_true", help="suppress the wrote-file line")
@@ -353,8 +503,11 @@ def main(argv: list[str] | None = None) -> int:
         print("no readings yet -- run process.py first")
         return 1
 
-    single_window = bool(args.all or args.last or args.today or args.start
-                         or args.end or args.night is not None)
+    if args.export_nights:
+        return export_nights(frame, args.export_nights, args.days)
+
+    single_window = bool(args.last or args.today or args.start
+                         or args.end or args.every)
 
     if single_window:
         window, label = choose_window(frame, args)
@@ -395,12 +548,46 @@ def main(argv: list[str] | None = None) -> int:
         summary_line = f"{len(raw)} readings, {label.lower()}"
 
     else:
-        # Day mode: a rolling 24h view plus one pane per calendar day. The
-        # rolling view leads because sleep crosses midnight -- a calendar day
-        # cuts the night in half, which is exactly what you want to see whole.
+        # Day mode: a rolling 24h view, then whole nights, then calendar days.
+        # Nights exist because sleep crosses midnight -- a calendar day cuts it
+        # in half, and a night is the unit an experiment actually happens in.
         days = by_day(frame, max(1, args.days))
         available = [day for day, _ in days]
-        if args.date and args.date.lower() not in (ROLLING_KEY, "24h"):
+        found_nights = nights(frame, max(1, args.days))
+        labels = night_labels()
+        comparison = (report.section("Nights compared", nights_table(found_nights, labels))
+                      if len(found_nights) > 1 else "")
+
+        def night_key(evening) -> str:
+            return f"night-{evening.isoformat()}"
+
+        active_key, chosen, label = ROLLING_KEY, rolling_window(frame), ROLLING_LABEL
+        if args.all or (args.date or "").lower() in ("alltime", "all"):
+            active_key, chosen, label = ALLTIME_KEY, frame, ALLTIME_LABEL
+        elif args.night is not None:
+            if not found_nights:
+                print(f"no nights with enough data yet "
+                      f"(need {MIN_NIGHT_READINGS} readings over {MIN_NIGHT_HOURS:g}h "
+                      f"between {config.NIGHT_START_HOUR:02d}:00 and "
+                      f"{config.NIGHT_END_HOUR:02d}:00)")
+                return 1
+            if args.night:
+                try:
+                    wanted = datetime.strptime(args.night, "%Y-%m-%d").date()
+                except ValueError:
+                    print(f"bad --night {args.night!r}; use the evening date, YYYY-MM-DD")
+                    return 1
+                match = [(e, sub) for e, sub in found_nights if e == wanted]
+                if not match:
+                    have = ", ".join(e.isoformat() for e, _ in found_nights)
+                    print(f"no night starting {wanted}. Nights available: {have}")
+                    return 1
+                evening, chosen = match[0]
+            else:
+                evening, chosen = found_nights[0]
+            active_key = night_key(evening)
+            label = f"Night of {evening:%a %d %b}"
+        elif args.date and args.date.lower() not in (ROLLING_KEY, "24h"):
             try:
                 wanted = datetime.strptime(args.date, "%Y-%m-%d").date()
             except ValueError:
@@ -410,21 +597,29 @@ def main(argv: list[str] | None = None) -> int:
                 have = ", ".join(d.isoformat() for d in available)
                 print(f"no readings on {wanted}. Days available: {have}")
                 return 1
-            active_key = wanted.isoformat()
-            chosen = dict(days)[wanted]
+            active_key, chosen = wanted.isoformat(), dict(days)[wanted]
             label = wanted.strftime("%a %d %b %Y")
-        else:
-            active_key = ROLLING_KEY
-            chosen = rolling_window(frame)
-            label = ROLLING_LABEL
 
         panes = day_pane(rolling_window(frame), ROLLING_KEY, active_key, active)
-        panes += "".join(day_pane(subset, day.isoformat(), active_key, active)
-                         for day, subset in days)
-        options = [(ROLLING_KEY, ROLLING_LABEL)]
-        options += [(day.isoformat(), day.strftime("%a %d %b %Y")) for day in available]
-        body = report.day_bar(options, active_key,
-                              meta=f"{len(available)} day(s) with readings") + panes
+        panes += day_pane(frame, ALLTIME_KEY, active_key, active,
+                          averages="day", table_limit=ALLTIME_TABLE_LIMIT)
+        panes += "".join(
+            day_pane(sub, night_key(evening), active_key, active, extra=comparison)
+            for evening, sub in found_nights
+        )
+        panes += "".join(day_pane(sub, day.isoformat(), active_key, active)
+                         for day, sub in days)
+
+        groups = [
+            ("Overview", [(ROLLING_KEY, ROLLING_LABEL), (ALLTIME_KEY, ALLTIME_LABEL)]),
+            ("Nights", [(night_key(e), f"Night of {e:%a %d %b}"
+                        + (f" — {labels[e.isoformat()]}" if e.isoformat() in labels else ""))
+                       for e, _ in found_nights]),
+            ("Days", [(d.isoformat(), d.strftime("%a %d %b %Y")) for d in available]),
+        ]
+        body = report.day_bar(
+            groups, active_key,
+            meta=f"{len(found_nights)} night(s), {len(available)} day(s)") + panes
 
         subtitle = (f"{pane_span(chosen)} local · {len(chosen)} readings"
                     f" · {len(frame)} in total across {len(available)} day(s)")

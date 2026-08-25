@@ -73,7 +73,8 @@ def refresh_report() -> None:
     try:
         import analyze
 
-        analyze.main(["--all", "--quiet"])
+        # No --all: the default day view is the one with the date picker.
+        analyze.main(["--quiet"])
     except Exception as exc:  # a report problem must never stop the loop
         print(f"    report not updated: {exc}", file=sys.stderr)
 

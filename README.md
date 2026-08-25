@@ -95,6 +95,36 @@ It opens on **the last 24 hours**, not on "today". That's deliberate — you go
 to bed before midnight, so a calendar day would cut your night in half. Use the
 dropdown at the top to jump to a specific day instead.
 
+### Comparing nights
+
+The dropdown also has a **Nights** section. A night runs from **20:00 to 09:00**
+— wider than actual sleep on purpose, so you get the quiet baseline before bed
+and the drop after you open the door in the morning.
+
+    python analyze.py --night              # the most recent night
+    python analyze.py --night 2026-08-24   # the night that began that evening
+
+Pick any night and you also get a **Nights compared** table: starting CO₂, peak
+and when it happened, how fast it climbed, and how many hours it spent above
+1000 ppm. Every night is measured against the first one, so you can see what a
+change actually did.
+
+To describe what you changed each night, edit `data/night_labels.json`:
+
+    {
+      "2026-08-24": "window open 10cm",
+      "2026-08-25": "fan on low"
+    }
+
+The key is the evening the night started. Whatever you write shows up in the
+dropdown and the comparison table. Leave it blank and nothing is shown.
+
+For working with the numbers yourself:
+
+    python analyze.py --export-nights      # data/nights.csv, one row per night
+
+Change the hours with `NIGHT_START_HOUR` and `NIGHT_END_HOUR` in `.env`.
+
 If you'd rather just see numbers in the terminal:
 
     python readings.py            # the 20 most recent
