@@ -238,10 +238,17 @@ def build_table(frame: pd.DataFrame) -> str:
     return report.table(rows, columns)
 
 
-ROLLING_KEY = "last24"
-ROLLING_LABEL = "Last 24 hours"
 ALLTIME_KEY = "alltime"
 ALLTIME_LABEL = "All time"
+# Zoom levels, shortest first. A range only appears once you have more data
+# than it covers -- otherwise it would be an identical copy of "All time".
+RANGES = [
+    ("1d", "Last 24 hours", pd.Timedelta(days=1)),
+    ("3d", "Last 3 days", pd.Timedelta(days=3)),
+    ("1w", "Last week", pd.Timedelta(days=7)),
+    ("1mo", "Last month", pd.Timedelta(days=30)),
+]
+ROLLING_KEY, ROLLING_LABEL = RANGES[0][0], RANGES[0][1]
 # The all-time table is capped; the whole history is in the database.
 ALLTIME_TABLE_LIMIT = 500
 
@@ -388,14 +395,32 @@ def by_day(frame: pd.DataFrame, keep: int):
             for day in reversed(days)]
 
 
-def rolling_window(frame: pd.DataFrame, hours: int = 24) -> pd.DataFrame:
-    """The last N hours of readings.
+def rolling_window(frame: pd.DataFrame, span: pd.Timedelta) -> pd.DataFrame:
+    """The last `span` of readings.
 
     Anchored to the newest reading rather than the wall clock: if capture has
-    been stopped for a while, you still want the last 24 hours that exist, not
-    a mostly-empty window.
+    been stopped for a while, you still want the last day that exists, not a
+    mostly-empty window.
     """
-    return frame.loc[frame.index >= frame.index.max() - pd.Timedelta(hours=hours)]
+    return frame.loc[frame.index >= frame.index.max() - span]
+
+
+def available_ranges(frame: pd.DataFrame):
+    """(key, label, window) for each range worth offering, plus All time."""
+    total = frame.index.max() - frame.index.min()
+    offered = [(key, label, span) for key, label, span in RANGES if span < total]
+    if not offered:  # very little data: the shortest range is still useful
+        offered = [RANGES[0]]
+    return offered
+
+
+def range_pane(frame: pd.DataFrame, key: str, active: str, metric: str,
+               extra: str = "") -> str:
+    """A pane sized for its zoom level: hourly rows close in, daily further out."""
+    span_hours = (frame.index.max() - frame.index.min()).total_seconds() / 3600
+    return day_pane(frame, key, active, metric, extra=extra,
+                    averages="hour" if span_hours <= 48 else "day",
+                    table_limit=None if span_hours <= 48 else ALLTIME_TABLE_LIMIT)
 
 
 def export_nights(frame: pd.DataFrame, path: Path, keep: int) -> int:
@@ -472,11 +497,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="average the charts into buckets: 5min, 1h, 1d")
     parser.add_argument("--all", action="store_true",
                         help="open on the all-time view")
-    parser.add_argument("--date", metavar="WHEN",
-                        help="open on a given day (YYYY-MM-DD), or 'last24' for the "
-                             "rolling 24-hour view. Default: last24")
+    parser.add_argument("--date", metavar="RANGE",
+                        help="open on a zoom level: 1d, 3d, 1w, 1mo, alltime. Default 1d")
     parser.add_argument("--days", type=int, default=7,
-                        help="how many recent days to include in the picker. Default 7")
+                        help="how many recent nights to include in the picker. Default 7")
     parser.add_argument("--metric", default="all", metavar="NAME",
                         help="open focused on one metric: co2, temp, humidity, "
                              "aqi, pm25, pm10")
@@ -548,11 +572,11 @@ def main(argv: list[str] | None = None) -> int:
         summary_line = f"{len(raw)} readings, {label.lower()}"
 
     else:
-        # Day mode: a rolling 24h view, then whole nights, then calendar days.
-        # Nights exist because sleep crosses midnight -- a calendar day cuts it
-        # in half, and a night is the unit an experiment actually happens in.
-        days = by_day(frame, max(1, args.days))
-        available = [day for day, _ in days]
+        # Zoom levels rather than a list of dates: 24 hours, 5 days, a month,
+        # six months, all time -- plus individual nights, which are the unit an
+        # experiment happens in. Ranges appear only once there is data to fill
+        # them, so the list grows with the history instead of starting cluttered.
+        offered = available_ranges(frame)
         found_nights = nights(frame, max(1, args.days))
         labels = night_labels()
         comparison = (report.section("Nights compared", nights_table(found_nights, labels))
@@ -561,15 +585,25 @@ def main(argv: list[str] | None = None) -> int:
         def night_key(evening) -> str:
             return f"night-{evening.isoformat()}"
 
-        active_key, chosen, label = ROLLING_KEY, rolling_window(frame), ROLLING_LABEL
+        windows = {key: rolling_window(frame, span) for key, _, span in offered}
+        windows[ALLTIME_KEY] = frame
+
+        active_key = offered[0][0]
         if args.all or (args.date or "").lower() in ("alltime", "all"):
-            active_key, chosen, label = ALLTIME_KEY, frame, ALLTIME_LABEL
-        elif args.night is not None:
+            active_key = ALLTIME_KEY
+        elif args.date:
+            match = [key for key, _, _ in offered if key == args.date.lower()]
+            if not match:
+                choices = ", ".join([key for key, _, _ in offered] + [ALLTIME_KEY])
+                print(f"unknown --date {args.date!r}; try one of: {choices}")
+                return 1
+            active_key = match[0]
+
+        if args.night is not None:
             if not found_nights:
-                print(f"no nights with enough data yet "
-                      f"(need {MIN_NIGHT_READINGS} readings over {MIN_NIGHT_HOURS:g}h "
-                      f"between {config.NIGHT_START_HOUR:02d}:00 and "
-                      f"{config.NIGHT_END_HOUR:02d}:00)")
+                print(f"no nights with enough data yet (need {MIN_NIGHT_READINGS} readings "
+                      f"over {MIN_NIGHT_HOURS:g}h between {config.NIGHT_START_HOUR:02d}:00 "
+                      f"and {config.NIGHT_END_HOUR:02d}:00)")
                 return 1
             if args.night:
                 try:
@@ -582,47 +616,40 @@ def main(argv: list[str] | None = None) -> int:
                     have = ", ".join(e.isoformat() for e, _ in found_nights)
                     print(f"no night starting {wanted}. Nights available: {have}")
                     return 1
-                evening, chosen = match[0]
+                evening = match[0][0]
             else:
-                evening, chosen = found_nights[0]
+                evening = found_nights[0][0]
             active_key = night_key(evening)
-            label = f"Night of {evening:%a %d %b}"
-        elif args.date and args.date.lower() not in (ROLLING_KEY, "24h"):
-            try:
-                wanted = datetime.strptime(args.date, "%Y-%m-%d").date()
-            except ValueError:
-                print(f"bad --date {args.date!r}; use YYYY-MM-DD or last24")
-                return 1
-            if wanted not in available:
-                have = ", ".join(d.isoformat() for d in available)
-                print(f"no readings on {wanted}. Days available: {have}")
-                return 1
-            active_key, chosen = wanted.isoformat(), dict(days)[wanted]
-            label = wanted.strftime("%a %d %b %Y")
 
-        panes = day_pane(rolling_window(frame), ROLLING_KEY, active_key, active)
-        panes += day_pane(frame, ALLTIME_KEY, active_key, active,
-                          averages="day", table_limit=ALLTIME_TABLE_LIMIT)
+        panes = "".join(range_pane(windows[key], key, active_key, active)
+                        for key, _, _ in offered)
+        panes += range_pane(frame, ALLTIME_KEY, active_key, active)
         panes += "".join(
             day_pane(sub, night_key(evening), active_key, active, extra=comparison)
             for evening, sub in found_nights
         )
-        panes += "".join(day_pane(sub, day.isoformat(), active_key, active)
-                         for day, sub in days)
 
         groups = [
-            ("Overview", [(ROLLING_KEY, ROLLING_LABEL), (ALLTIME_KEY, ALLTIME_LABEL)]),
+            ("Range", [(key, label) for key, label, _ in offered]
+                      + [(ALLTIME_KEY, ALLTIME_LABEL)]),
             ("Nights", [(night_key(e), f"Night of {e:%a %d %b}"
-                        + (f" — {labels[e.isoformat()]}" if e.isoformat() in labels else ""))
+                        + (f" — {labels[e.isoformat()]}" if labels.get(e.isoformat()) else ""))
                        for e, _ in found_nights]),
-            ("Days", [(d.isoformat(), d.strftime("%a %d %b %Y")) for d in available]),
         ]
         body = report.day_bar(
             groups, active_key,
-            meta=f"{len(found_nights)} night(s), {len(available)} day(s)") + panes
+            meta=f"{len(found_nights)} night(s) · {len(frame)} readings") + panes
 
+        lookup = dict(windows)
+        lookup.update({night_key(e): sub for e, sub in found_nights})
+        chosen = lookup[active_key]
+        label = dict(
+            [(key, lab) for key, lab, _ in offered]
+            + [(ALLTIME_KEY, ALLTIME_LABEL)]
+            + [(night_key(e), f"Night of {e:%a %d %b}") for e, _ in found_nights]
+        )[active_key]
         subtitle = (f"{pane_span(chosen)} local · {len(chosen)} readings"
-                    f" · {len(frame)} in total across {len(available)} day(s)")
+                    f" · {len(frame)} in total")
         summary_line = f"{len(chosen)} readings, {label.lower()}"
 
     html_text = report.page(

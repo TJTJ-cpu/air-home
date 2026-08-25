@@ -92,8 +92,21 @@ This builds a web page and opens it in your browser. You get:
 - A table of every single reading
 
 It opens on **the last 24 hours**, not on "today". That's deliberate — you go
-to bed before midnight, so a calendar day would cut your night in half. Use the
-dropdown at the top to jump to a specific day instead.
+to bed before midnight, so a calendar day would cut your night in half.
+
+The dropdown at the top is a zoom control rather than a list of dates:
+
+    Last 24 hours · Last 3 days · Last week · Last month · All time
+
+A range only shows up once you have more data than it covers, so the list
+starts short and grows with your history. Zoomed out, the axis and the hover
+tooltip switch from clock times to dates, so you always know which day a point
+belongs to.
+
+Short gaps in the line are drawn straight through — one missed photo shouldn't
+break the chart into pieces. A long gap, like the camera being off for hours,
+still leaves a break, because a straight line across that would be showing you
+data that was never measured.
 
 ### Comparing nights
 

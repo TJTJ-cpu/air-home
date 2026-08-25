@@ -10,6 +10,7 @@ from __future__ import annotations
 import html
 import json
 import math
+import statistics
 from datetime import datetime
 
 # Palette roles. Light values on :root, dark values redefined under both the
@@ -256,6 +257,12 @@ if (daybar) {
 }
 """
 
+# A gap up to this many sampling intervals is bridged with a straight line --
+# one or two missed readings should not shatter the line into fragments. A
+# longer gap (the camera was off for hours) still breaks it, because drawing a
+# straight line across that would invent data that was never measured.
+GAP_BRIDGE_INTERVALS = 6
+
 WIDTH = 460
 PLOT_H = 150
 PAD_L, PAD_R, PAD_T, PAD_B = 46, 14, 12, 26
@@ -297,6 +304,19 @@ def nice_axis(low: float, high: float, target: int = 4,
     return start, end, ticks
 
 
+def _time_formats(span_hours: float) -> tuple[str, str]:
+    """Axis and tooltip time formats, chosen by how much time is on screen.
+
+    Over a day, the clock alone is ambiguous -- you need the date to know which
+    night a point belongs to.
+    """
+    if span_hours <= 36:
+        return "%H:%M", "%H:%M"
+    if span_hours <= 24 * 60:
+        return "%d %b", "%d %b %H:%M"
+    return "%b %Y", "%d %b %Y"
+
+
 def _fmt(value: float, places: int) -> str:
     return f"{value:.{places}f}" if places else f"{round(value):g}"
 
@@ -325,6 +345,12 @@ def line_chart(name: str, unit: str, samples: list[tuple[datetime, float | None]
     times = [moment for moment, _ in samples]
     t0, t1 = times[0].timestamp(), times[-1].timestamp()
     span = (t1 - t0) or 1.0
+    axis_format, tip_format = _time_formats(span / 3600)
+
+    # Bridge a short break in the data; leave a real outage broken.
+    steps = [b - a for a, b in zip(times, times[1:])]
+    cadence = statistics.median(steps).total_seconds() if steps else 0
+    max_gap = cadence * GAP_BRIDGE_INTERVALS if cadence else float("inf")
 
     def px(moment: datetime) -> float:
         return PAD_L + (moment.timestamp() - t0) / span * (width - PAD_L - PAD_R)
@@ -350,7 +376,7 @@ def line_chart(name: str, unit: str, samples: list[tuple[datetime, float | None]
         x = px(moment)
         anchor = "start" if index == 0 else ("end" if index == min(4, count) - 1 else "middle")
         parts.append(f'<text class="tick" x="{x:.1f}" y="{PAD_T + plot_h + 15}" '
-                     f'text-anchor="{anchor}">{moment.strftime("%H:%M")}</text>')
+                     f'text-anchor="{anchor}">{moment.strftime(axis_format)}</text>')
 
     if threshold is not None and y0 <= threshold <= y1:
         y = py(threshold)
@@ -360,18 +386,18 @@ def line_chart(name: str, unit: str, samples: list[tuple[datetime, float | None]
             parts.append(f'<text class="threshold-label" x="{width - PAD_R}" '
                          f'y="{y - 5:.1f}" text-anchor="end">{html.escape(threshold_label)}</text>')
 
-    # Gaps (unreadable photos) break the line rather than being bridged, so a
-    # missing stretch never looks like a measured flat run.
-    path, drawing, points = [], False, []
+    # One or two missed readings are drawn straight through; a long outage
+    # starts a new subpath so the chart never invents a measurement.
+    path, previous, points = [], None, []
     for moment, value in samples:
         if value is None:
-            drawing = False
             continue
         x, y = px(moment), py(value)
-        path.append(f'{"M" if not drawing else "L"}{x:.1f} {y:.1f}')
-        drawing = True
+        bridged = previous is not None and (moment - previous).total_seconds() <= max_gap
+        path.append(f'{"L" if bridged else "M"}{x:.1f} {y:.1f}')
+        previous = moment
         points.append({"x": round(x, 1), "y": round(y, 1),
-                       "t": moment.strftime("%H:%M"), "v": _fmt(value, places)})
+                       "t": moment.strftime(tip_format), "v": _fmt(value, places)})
     parts.append(f'<path class="line" d="{" ".join(path)}"/>')
 
     peak = max((s for s in samples if s[1] is not None), key=lambda s: s[1])
@@ -473,6 +499,11 @@ def page(title: str, subtitle: str, body: str, footer: str) -> str:
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- This file is rewritten every few minutes. Without these, browsers happily
+     serve a cached copy of a file:// page and you see yesterday's report. -->
+<meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="pragma" content="no-cache">
+<meta http-equiv="expires" content="0">
 <title>{html.escape(title)}</title>
 <style>{STYLE}</style>
 </head>

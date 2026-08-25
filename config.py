@@ -13,6 +13,9 @@ CAPTURES = ROOT / "captures"
 PENDING = CAPTURES / "pending"
 PROCESSED = CAPTURES / "processed"
 FAILED = CAPTURES / "failed"
+# Readings you deleted on purpose. Kept, not destroyed -- and kept out of
+# captures/processed/ so rebuild.py cannot resurrect them.
+REJECTED = CAPTURES / "rejected"
 DATA = ROOT / "data"
 DB_PATH = DATA / "readings.db"
 
@@ -62,5 +65,5 @@ FIELDS = tuple(FIELD_RANGES)
 
 
 def ensure_dirs() -> None:
-    for path in (PENDING, PROCESSED, FAILED, DATA):
+    for path in (PENDING, PROCESSED, FAILED, REJECTED, DATA):
         path.mkdir(parents=True, exist_ok=True)
