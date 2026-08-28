@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -10,14 +11,41 @@ ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / ".env")
 
 CAPTURES = ROOT / "captures"
-PENDING = CAPTURES / "pending"
-PROCESSED = CAPTURES / "processed"
-FAILED = CAPTURES / "failed"
-# Readings you deleted on purpose. Kept, not destroyed -- and kept out of
-# captures/processed/ so rebuild.py cannot resurrect them.
-REJECTED = CAPTURES / "rejected"
 DATA = ROOT / "data"
 DB_PATH = DATA / "readings.db"
+
+# Every reading belongs to a room. One database holds them all, keyed by
+# (room, captured_at), so rooms can be compared without opening several files.
+# Photos are per-room folders, because each room needs its own work queue.
+LEGACY_ROOM = os.getenv("LEGACY_ROOM", "grandpa").strip().lower()
+DEFAULT_ROOM = os.getenv("DEFAULT_ROOM", "").strip().lower()
+_ROOM_OK = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
+
+
+def room_name(raw: str) -> str:
+    """Normalise and check a room name -- it becomes a folder, so be strict."""
+    name = (raw or "").strip().lower().replace(" ", "-")
+    if not _ROOM_OK.match(name):
+        raise ValueError(
+            f"bad room name {raw!r}: use letters, digits, dash or underscore "
+            "(max 32 chars), e.g. grandpa, tj, mom"
+        )
+    return name
+
+
+def rooms_on_disk() -> list[str]:
+    """Rooms that have a captures folder, whether or not they have readings."""
+    if not CAPTURES.is_dir():
+        return []
+    return sorted(p.name for p in CAPTURES.iterdir()
+                  if p.is_dir() and _ROOM_OK.match(p.name))
+
+
+def paths_for(room: str) -> dict:
+    """The four queue folders for one room."""
+    base = CAPTURES / room_name(room)
+    return {"base": base, "pending": base / "pending", "processed": base / "processed",
+            "failed": base / "failed", "rejected": base / "rejected"}
 
 
 def _int(name: str, default: int | None) -> int | None:
@@ -64,6 +92,10 @@ FIELD_RANGES: dict[str, tuple[float, float]] = {
 FIELDS = tuple(FIELD_RANGES)
 
 
-def ensure_dirs() -> None:
-    for path in (PENDING, PROCESSED, FAILED, REJECTED, DATA):
-        path.mkdir(parents=True, exist_ok=True)
+def ensure_dirs(room: str | None = None) -> None:
+    """Make the data folder, and one room's queue folders if a room is given."""
+    DATA.mkdir(parents=True, exist_ok=True)
+    CAPTURES.mkdir(parents=True, exist_ok=True)
+    if room:
+        for path in paths_for(room).values():
+            path.mkdir(parents=True, exist_ok=True)

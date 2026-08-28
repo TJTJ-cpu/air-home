@@ -13,8 +13,9 @@ from pathlib import Path
 import config
 import store
 
-COLUMNS = ("captured_at", *config.FIELDS, "notes")
+COLUMNS = ("room", "captured_at", *config.FIELDS, "notes")
 HEADERS = {
+    "room": "room",
     "captured_at": "captured (UTC)",
     "temperature_c": "temp C",
     "humidity_pct": "hum %",
@@ -44,8 +45,12 @@ def print_table(rows) -> None:
             print("  ".join("-" * width for width in widths))
 
 
-def export_csv(conn, path: Path) -> int:
-    rows = conn.execute("SELECT * FROM readings ORDER BY captured_at").fetchall()
+def export_csv(conn, path: Path, room: str | None = None) -> int:
+    if room:
+        rows = conn.execute("SELECT * FROM readings WHERE room = ? ORDER BY captured_at",
+                            (room,)).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM readings ORDER BY captured_at").fetchall()
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
@@ -56,6 +61,8 @@ def export_csv(conn, path: Path) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--room", help="which room (default: all of them)")
+    parser.add_argument("--rooms", action="store_true", help="list rooms and exit")
     parser.add_argument("--limit", type=int, default=20, help="how many to show (default 20)")
     parser.add_argument("--all", action="store_true", help="show everything")
     parser.add_argument("--csv", nargs="?", const=config.DATA / "readings.csv",
@@ -67,20 +74,27 @@ def main() -> int:
         return 1
 
     with store.connect() as conn:
+        if args.rooms:
+            for row in store.rooms(conn):
+                print(f"  {row['room']:12} {row['n']:6} readings   "
+                      f"{row['first'][:16].replace('T', ' ')} -> {row['last'][:16].replace('T', ' ')}")
+            return 0
+        room = config.room_name(args.room) if args.room else None
         if args.csv:
-            written = export_csv(conn, args.csv)
+            written = export_csv(conn, args.csv, room)
             print(f"wrote {written} reading(s) to {args.csv}")
             return 0
 
-        total = store.count(conn)
+        total = store.count(conn, room)
         if not total:
             print("no readings yet -- run process.py first")
             return 0
 
         limit = total if args.all else args.limit
-        rows = store.latest(conn, limit)
+        rows = store.latest(conn, limit, room)
         print_table(rows)
-        print(f"\nshowing {len(rows)} of {total} reading(s) in {config.DB_PATH}")
+        where = f"for {room}" if room else "across all rooms"
+        print(f"\nshowing {len(rows)} of {total} reading(s) {where}")
 
     return 0
 

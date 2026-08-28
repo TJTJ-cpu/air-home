@@ -58,7 +58,7 @@ Then in LM Studio: load `qwen/qwen3-vl-8b` and start the server from the
 
 First, check what the camera can see:
 
-    python capture.py --once
+    python capture.py grandpa --once
 
 Open that photo. Can you read every digit clearly? If yes, you're good. If it's
 blurry or there's glare on the glass, fix it now — it matters more than
@@ -66,18 +66,55 @@ anything else here.
 
 Then start it and leave it running in its own window:
 
-    python watch.py
+    python watch.py grandpa
 
 That's it. It takes a photo every 3 minutes, reads it, saves it, and keeps the
 report up to date. Press `Ctrl+C` to stop.
 
+The word after `watch.py` is **which room the camera is pointed at**. See
+[Rooms](#rooms) below — it matters, because readings are filed under it.
+
 Want a different gap between photos?
 
-    python watch.py --interval 5m
-    python watch.py --interval 1m
+    python watch.py grandpa --interval 5m
+    python watch.py tj --interval 1m
 
 Five minutes is a sensible default. Every minute gives you more detail, but
 uses a lot more disk space and a lot more of your GPU.
+
+## Rooms
+
+One monitor and one webcam can cover several rooms — you just move them, and
+tell the program where they are:
+
+    python watch.py grandpa
+    python watch.py tj
+    python watch.py mom
+
+Every reading is filed under that room, and each room gets its own photo queue
+in `captures/<room>/`. Nothing mixes: two rooms can even have readings at the
+exact same time.
+
+Room names are lowercased and must be simple — letters, digits, dashes,
+underscores. `Grandpa` and `grandpa` are the same room; `guest room` becomes
+`guest-room`.
+
+To see what you have:
+
+    python readings.py --rooms
+
+Reports and listings default to whichever room has the newest reading, so most
+of the time you don't need to say. When you do:
+
+    python analyze.py --room tj --open
+    python readings.py --room mom
+    python prune.py --room tj --incomplete
+
+`process.py` with no room reads the waiting photos for **every** room, which is
+usually what you want after moving the camera around:
+
+    python process.py            # all rooms
+    python process.py tj         # just one
 
 ## Looking at your data
 
@@ -147,11 +184,12 @@ If you'd rather just see numbers in the terminal:
 
 | Where | What |
 |---|---|
-| `data/readings.db` | All your readings. This is the important one. |
+| `data/readings.db` | All your readings, every room. This is the important one. |
 | `data/report.html` | The web page. Rebuilt automatically, safe to delete. |
-| `captures/pending/` | Photos waiting to be read |
-| `captures/processed/` | Photos that have been read |
-| `captures/failed/` | Photos the AI couldn't make sense of |
+| `captures/<room>/pending/` | Photos waiting to be read |
+| `captures/<room>/processed/` | Photos that have been read |
+| `captures/<room>/failed/` | Photos the AI couldn't make sense of |
+| `captures/<room>/rejected/` | Photos behind readings you deleted |
 
 Photos are never deleted, only moved. They add up fast — roughly 25 MB a day —
 so clear out `captures/processed/` now and then if space gets tight. Your
@@ -181,7 +219,7 @@ real cannot.
 and they'll get read automatically.
 
 **Want to catch up quickly?** `python process.py` reads everything that's
-waiting, faster than the loop manages.
+waiting, across every room, faster than the loop manages.
 
 **Lost the database?** `python rebuild.py` puts it back together from the small
 `.json` files saved next to each photo.

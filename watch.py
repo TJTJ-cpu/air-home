@@ -3,9 +3,12 @@
 Takes a photo, reads it with the model, stores the reading, waits, repeats --
 so there is one command to run instead of three.
 
-    python watch.py                     # every 3 minutes
-    python watch.py --interval 5m
-    python watch.py --interval 1m --count 20
+    python watch.py grandpa             # every 3 minutes
+    python watch.py tj --interval 5m
+    python watch.py mom --interval 1m --count 20
+
+The room decides where photos queue and which room the readings are filed
+under, so one machine can cover several rooms as the camera moves.
 
 The photo is always written to disk BEFORE the model is asked to read it. If
 LM Studio is down or slow, the capture still happened: the photo waits in
@@ -32,7 +35,7 @@ from extract import ExtractionError
 RESERVE_SECONDS = 25
 
 
-def drain(conn, deadline: float, verbose: bool = True) -> tuple[int, int, bool]:
+def drain(conn, room: str, deadline: float, verbose: bool = True) -> tuple[int, int, bool]:
     """Read pending photos until the queue empties or time runs short.
 
     Normally there is exactly one waiting photo -- the one just taken. After an
@@ -42,14 +45,15 @@ def drain(conn, deadline: float, verbose: bool = True) -> tuple[int, int, bool]:
     Returns (read, failed, model_down).
     """
     read = failed = 0
-    for image in process.pending_images(config.PENDING):
+    pending = config.paths_for(room)["pending"]
+    for image in process.pending_images(pending):
         if time.monotonic() > deadline - RESERVE_SECONDS:
-            remaining = len(process.pending_images(config.PENDING))
+            remaining = len(process.pending_images(pending))
             if verbose and remaining:
                 print(f"    {remaining} photo(s) still queued, continuing next cycle", flush=True)
             break
         try:
-            status, message = process.process_one(conn, image)
+            status, message = process.process_one(conn, room, image)
         except ExtractionError as exc:
             # The model is unreachable. Stop trying this cycle and leave every
             # photo where it is; the next cycle picks them all up.
@@ -68,19 +72,20 @@ def drain(conn, deadline: float, verbose: bool = True) -> tuple[int, int, bool]:
     return read, failed, False
 
 
-def refresh_report() -> None:
+def refresh_report(room: str) -> None:
     """Regenerate data/report.html so it is current whenever you open it."""
     try:
         import analyze
 
-        # No --all: the default day view is the one with the date picker.
-        analyze.main(["--quiet"])
+        # No --all: the default view is the one with the picker.
+        analyze.main(["--room", room, "--quiet"])
     except Exception as exc:  # a report problem must never stop the loop
         print(f"    report not updated: {exc}", file=sys.stderr)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("room", help="which room the camera is watching, e.g. grandpa, tj")
     parser.add_argument("--interval", type=capture.parse_interval, default="3m",
                         help="time between photos: 30s, 1m, 3m, 5m. Default 3m")
     parser.add_argument("--count", type=int, default=0, help="stop after N photos (0 = forever)")
@@ -90,11 +95,20 @@ def main() -> int:
                         help="skip regenerating data/report.html each cycle")
     args = parser.parse_args()
 
-    config.ensure_dirs()
+    try:
+        room = config.room_name(args.room)
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    config.ensure_dirs(room)
+    pending = config.paths_for(room)["pending"]
     limit = args.count if args.count > 0 else None
 
-    backlog = len(process.pending_images(config.PENDING))
-    print(f"watching every {args.interval:g}s -- Ctrl+C to stop", flush=True)
+    known = config.rooms_on_disk()
+    backlog = len(process.pending_images(pending))
+    print(f"[{room}] watching every {args.interval:g}s -- Ctrl+C to stop", flush=True)
+    if known and room not in known:
+        print(f"new room '{room}' -- existing rooms: {', '.join(known)}", flush=True)
     if backlog:
         print(f"{backlog} photo(s) already queued; working through them as we go", flush=True)
 
@@ -109,14 +123,14 @@ def main() -> int:
                 deadline = cycle_start + args.interval
 
                 try:
-                    path = capture.capture_one(config.PENDING, args.camera, args.warmup)
+                    path = capture.capture_one(pending, args.camera, args.warmup)
                     taken += 1
                     stamp = datetime.now().strftime("%H:%M:%S")
                     print(f"[{taken}] {stamp}  {path.name}", flush=True)
                 except Exception as exc:  # a camera glitch must not end the run
                     print(f"capture failed: {exc}", file=sys.stderr)
 
-                read, failed, down = drain(conn, deadline)
+                read, failed, down = drain(conn, room, deadline)
                 read_total += read
                 failed_total += failed
 
@@ -130,7 +144,7 @@ def main() -> int:
                     # never missing the last few hours.
                     store.checkpoint(conn)
                     if not args.no_report:
-                        refresh_report()
+                        refresh_report(room)
 
                 if limit is not None and taken >= limit:
                     break
@@ -143,8 +157,8 @@ def main() -> int:
 
     print(f"\nstopped: {taken} photo(s) captured, {read_total} reading(s) stored, "
           f"{failed_total} unreadable")
-    if leftover := len(process.pending_images(config.PENDING)):
-        print(f"{leftover} photo(s) left in pending/ -- run process.py to catch up")
+    if leftover := len(process.pending_images(pending)):
+        print(f"{leftover} photo(s) left in pending/ -- run process.py {room} to catch up")
     return 0
 
 

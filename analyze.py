@@ -21,6 +21,7 @@ import pandas as pd
 
 import config
 import report
+import store
 
 # field, label, unit, decimal places, threshold, threshold label
 METRICS = [
@@ -59,10 +60,15 @@ def fmt(value: float, places: int) -> str:
     return f"{value:.{places}f}" if places else f"{round(value):g}"
 
 
-def load(db_path: Path) -> pd.DataFrame:
-    """Every reading, indexed by local time."""
+def load(db_path: Path, room: str | None = None) -> pd.DataFrame:
+    """One room's readings (or all of them), indexed by local time."""
     with sqlite3.connect(db_path) as conn:
-        frame = pd.read_sql_query("SELECT * FROM readings ORDER BY captured_at", conn)
+        if room:
+            frame = pd.read_sql_query(
+                "SELECT * FROM readings WHERE room = ? ORDER BY captured_at",
+                conn, params=(room,))
+        else:
+            frame = pd.read_sql_query("SELECT * FROM readings ORDER BY captured_at", conn)
     if frame.empty:
         return frame
     stamps = pd.to_datetime(frame["captured_at"], format="ISO8601", utc=True)
@@ -509,6 +515,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="write the night comparison to CSV and exit")
     parser.add_argument("--output", type=Path, default=config.DATA / "report.html")
     parser.add_argument("--open", action="store_true", help="open in the browser when done")
+    parser.add_argument("--room", help="which room to report on (default: the most recent)")
+    parser.add_argument("--list-rooms", action="store_true", help="show rooms and exit")
     parser.add_argument("--quiet", action="store_true", help="suppress the wrote-file line")
     args = parser.parse_args(argv)
 
@@ -522,7 +530,29 @@ def main(argv: list[str] | None = None) -> int:
         print(f"no database at {config.DB_PATH} -- run process.py first")
         return 1
 
-    frame = load(config.DB_PATH)
+    with store.connect() as conn:
+        available = store.rooms(conn)
+        if args.list_rooms:
+            if not available:
+                print("no rooms with readings yet")
+                return 0
+            for row in available:
+                print(f"  {row['room']:12} {row['n']:6} readings   "
+                      f"{row['first'][:16].replace('T', ' ')} -> {row['last'][:16].replace('T', ' ')}")
+            return 0
+        names = [row["room"] for row in available]
+        if args.room:
+            try:
+                room = config.room_name(args.room)
+            except ValueError as exc:
+                print(exc); return 1
+            if room not in names:
+                print(f"no readings for room {room!r}. Rooms: {', '.join(names) or 'none'}")
+                return 1
+        else:
+            room = store.latest_room(conn)
+
+    frame = load(config.DB_PATH, room)
     if frame.empty:
         print("no readings yet -- run process.py first")
         return 1
@@ -653,7 +683,7 @@ def main(argv: list[str] | None = None) -> int:
         summary_line = f"{len(chosen)} readings, {label.lower()}"
 
     html_text = report.page(
-        title="air-home" if not single_window else f"air-home — {label}",
+        title=f"air-home — {room}" if not single_window else f"air-home — {room} — {label}",
         subtitle=subtitle,
         body=body,
         footer=f"Generated {datetime.now(LOCAL_TZ).strftime('%Y-%m-%d %H:%M')} local "
@@ -662,7 +692,7 @@ def main(argv: list[str] | None = None) -> int:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(html_text, encoding="utf-8")
     if not args.quiet:
-        print(f"wrote {args.output}  ({summary_line})")
+        print(f"wrote {args.output}  [{room}] {summary_line}")
 
     if args.open:
         webbrowser.open(args.output.resolve().as_uri())

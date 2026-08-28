@@ -3,8 +3,10 @@
 The filename is the capture time in UTC and is the authoritative timestamp for
 the reading -- the clock shown on the device itself is never trusted.
 
-    python capture.py --interval 5m
-    python capture.py --once            # one shot, for checking framing
+    python capture.py grandpa --interval 5m
+    python capture.py tj --once         # one shot, for checking framing
+
+The room decides which queue the photos land in: captures/<room>/pending/.
 """
 from __future__ import annotations
 
@@ -83,6 +85,7 @@ def capture_one(outdir: Path, index: int, warmup: int) -> Path:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("room", help="which room this camera is pointed at, e.g. grandpa, tj")
     parser.add_argument(
         "--interval", type=parse_interval, default="5m",
         help="time between shots: 30s, 1m, 5m, 1h (bare number means minutes). Default 5m",
@@ -91,9 +94,18 @@ def main() -> int:
     parser.add_argument("--count", type=int, default=0, help="stop after N photos (0 = forever)")
     parser.add_argument("--camera", type=int, default=config.CAMERA_INDEX)
     parser.add_argument("--warmup", type=int, default=config.CAMERA_WARMUP_FRAMES)
-    parser.add_argument("--outdir", type=Path, default=config.PENDING)
+    parser.add_argument("--outdir", type=Path, default=None,
+                        help="override where photos land (default: the room queue)")
     args = parser.parse_args()
 
+    try:
+        room = config.room_name(args.room)
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    config.ensure_dirs(room)
+    if args.outdir is None:
+        args.outdir = config.paths_for(room)["pending"]
     args.outdir.mkdir(parents=True, exist_ok=True)
 
     if args.once:
@@ -103,7 +115,7 @@ def main() -> int:
 
     limit = args.count if args.count > 0 else None
     print(
-        f"capturing every {args.interval:g}s into {args.outdir}"
+        f"[{room}] capturing every {args.interval:g}s into {args.outdir}"
         + (f", {limit} shots" if limit else "")
         + " -- Ctrl+C to stop"
     )

@@ -18,7 +18,7 @@ import config
 import store
 
 
-def load_sidecars(folder: Path) -> tuple[list[dict], list[str]]:
+def load_sidecars(folder: Path, room: str) -> tuple[list[dict], list[str]]:
     """Return (records, problems) parsed from every *.json in the folder."""
     records: list[dict] = []
     problems: list[str] = []
@@ -27,6 +27,7 @@ def load_sidecars(folder: Path) -> tuple[list[dict], list[str]]:
             data = json.loads(path.read_text(encoding="utf-8"))
             records.append(
                 {
+                    "room": data.get("room") or room,
                     "captured_at": data["captured_at"],
                     "image": data.get("image", f"{path.stem}.jpg"),
                     "reading": data["reading"],
@@ -38,33 +39,47 @@ def load_sidecars(folder: Path) -> tuple[list[dict], list[str]]:
     return records, problems
 
 
-def existing_timestamps() -> set[str]:
+def existing_keys() -> set[tuple]:
     if not config.DB_PATH.exists():
         return set()
     with store.connect() as conn:
-        return {row["captured_at"] for row in conn.execute("SELECT captured_at FROM readings")}
+        return {(row["room"], row["captured_at"])
+                for row in conn.execute("SELECT room, captured_at FROM readings")}
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source", type=Path, default=config.PROCESSED,
-                        help="folder of sidecars (default captures/processed/)")
+    parser.add_argument("--room", help="restrict to one room (default: all of them)")
+    parser.add_argument("--source", type=Path, default=None,
+                        help="a specific folder of sidecars")
     parser.add_argument("--dry-run", action="store_true",
                         help="report what would be restored, write nothing")
     args = parser.parse_args()
 
-    records, problems = load_sidecars(args.source)
+    try:
+        rooms = [config.room_name(args.room)] if args.room else config.rooms_on_disk()
+    except ValueError as exc:
+        print(exc)
+        return 1
+    records, problems = [], []
+    for room in rooms:
+        folder = args.source or config.paths_for(room)["processed"]
+        if folder.is_dir():
+            got, bad = load_sidecars(folder, room)
+            records.extend(got)
+            problems.extend(bad)
     if not records and not problems:
-        print(f"no sidecars found in {args.source}")
+        print(f"no sidecars found for: {', '.join(rooms) or 'no rooms'}")
         return 0
 
-    print(f"read {len(records)} sidecar(s) from {args.source}")
+    print(f"read {len(records)} sidecar(s) across {len(rooms)} room(s)")
     for problem in problems:
         print(f"  unusable: {problem}")
 
     if args.dry_run:
-        known = existing_timestamps()
-        missing = [r for r in records if r["captured_at"] not in known]
+        known = existing_keys()
+        missing = [r for r in records
+                   if (r["room"], r["captured_at"]) not in known]
         print(f"\nwould restore {len(missing)}, already present {len(records) - len(missing)}"
               f", unusable {len(problems)}")
         if missing:
@@ -75,8 +90,8 @@ def main() -> int:
     restored = present = 0
     with store.connect() as conn:
         for record in records:
-            if store.save(conn, record["captured_at"], record["image"],
-                          record["reading"], record["notes"]):
+            if store.save(conn, record["room"], record["captured_at"],
+                          record["image"], record["reading"], record["notes"]):
                 restored += 1
             else:
                 present += 1

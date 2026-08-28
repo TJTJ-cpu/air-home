@@ -5,9 +5,9 @@ to captures/processed/, and one the model could not read moves to
 captures/failed/ -- so "what is left in pending" is always the work queue, and
 nothing is ever read twice.
 
-    python process.py
-    python process.py --limit 20
-    python process.py --retry-failed
+    python process.py              # every room with photos waiting
+    python process.py grandpa      # just one room
+    python process.py tj --retry-failed
 
 `watch.py` runs the capture and this step together in one loop; this script
 stays useful for draining a backlog or re-reading failures.
@@ -141,7 +141,7 @@ def _summarise(reading: dict) -> str:
     return " ".join(parts)
 
 
-def process_one(conn, image: Path, dry_run: bool = False) -> tuple[str, str]:
+def process_one(conn, room: str, image: Path, dry_run: bool = False) -> tuple[str, str]:
     """Read one photo, store the reading, file the photo away.
 
     Returns (status, message) where status is saved / duplicate / unreadable /
@@ -150,16 +150,19 @@ def process_one(conn, image: Path, dry_run: bool = False) -> tuple[str, str]:
     stays exactly where it is, because there is nothing wrong with the photo.
     """
     stamp = captured_at(image)
+    queues = config.paths_for(room)
     try:
         reading, notes = extract(image)
     except ExtractionError as exc:
         if exc.transient:
             raise
         if not dry_run:
-            _move(image, config.FAILED, {"captured_at": stamp, "error": str(exc)})
+            _move(image, queues["failed"], {"room": room, "captured_at": stamp,
+                                            "error": str(exc)})
         return "failed", str(exc)
 
     sidecar = {
+        "room": room,
         "captured_at": stamp,
         "image": image.name,
         "model": config.LMSTUDIO_MODEL,
@@ -169,19 +172,19 @@ def process_one(conn, image: Path, dry_run: bool = False) -> tuple[str, str]:
 
     if all(value is None for value in reading.values()):
         if not dry_run:
-            _move(image, config.FAILED, sidecar)
+            _move(image, queues["failed"], sidecar)
         return "unreadable", "no values recognised"
 
     message = _summarise(reading) + (f"   ({'; '.join(notes)})" if notes else "")
     if dry_run:
         return "dry", message
 
-    saved = store.save(conn, stamp, image.name, reading, notes)
+    saved = store.save(conn, room, stamp, image.name, reading, notes)
     # Commit before the photo leaves the queue. If this dies here, the photo is
     # still in pending/ and gets re-read -- never the other way round, which
     # would lose the reading for good.
     conn.commit()
-    _move(image, config.PROCESSED, sidecar)
+    _move(image, queues["processed"], sidecar)
     return ("saved" if saved else "duplicate"), message
 
 
@@ -198,6 +201,7 @@ def _too_many_failures(count: int) -> bool:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("room", nargs="?", help="which room to read (default: all of them)")
     parser.add_argument("--source", type=Path, default=None, help="folder of photos to read")
     parser.add_argument("--limit", type=int, default=0, help="process at most N photos")
     parser.add_argument("--retry-failed", action="store_true",
@@ -207,27 +211,41 @@ def main() -> int:
     args = parser.parse_args()
 
     config.ensure_dirs()
-    source = args.source or (config.FAILED if args.retry_failed else config.PENDING)
-    if not source.is_dir():
-        print(f"no such folder: {source}", file=sys.stderr)
+    try:
+        rooms = [config.room_name(args.room)] if args.room else config.rooms_on_disk()
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
         return 1
-
-    images = pending_images(source)
-    if args.limit > 0:
-        images = images[: args.limit]
-    if not images:
-        print(f"nothing to process in {source}")
+    if not rooms:
+        print("no rooms yet -- run capture.py <room> or watch.py <room> first")
         return 0
 
-    print(f"processing {len(images)} photo(s) from {source}")
+    queue = "failed" if args.retry_failed else "pending"
+    work = []
+    for room in rooms:
+        config.ensure_dirs(room)
+        source = args.source or config.paths_for(room)[queue]
+        if source.is_dir():
+            work.extend((room, image) for image in pending_images(source))
+    if args.limit > 0:
+        work = work[: args.limit]
+    if not work:
+        where = ", ".join(rooms)
+        print(f"nothing to process in {queue}/ for: {where}")
+        return 0
+
+    by_room = {}
+    for room, _ in work:
+        by_room[room] = by_room.get(room, 0) + 1
+    print("processing " + ", ".join(f"{n} photo(s) from {r}" for r, n in by_room.items()))
     saved = skipped = failed = 0
     consecutive_failures = 0
 
     # A dry run never opens the database -- connecting would create the file.
     with (nullcontext(None) if args.dry_run else store.connect()) as conn:
-        for image in images:
+        for room, image in work:
             try:
-                status, message = process_one(conn, image, args.dry_run)
+                status, message = process_one(conn, room, image, args.dry_run)
             except ExtractionError as exc:
                 print(f"  {image.name}  {exc}", file=sys.stderr)
                 print("\naborting -- no further photos were touched. "
@@ -237,7 +255,7 @@ def main() -> int:
             if status in ("failed", "unreadable"):
                 consecutive_failures += 1
                 failed += 1
-                print(f"  {image.name}  {status.upper()}: {message}")
+                print(f"  [{room}] {image.name}  {status.upper()}: {message}")
                 if _too_many_failures(consecutive_failures):
                     return 1
                 continue
@@ -247,7 +265,7 @@ def main() -> int:
                 saved += 1
             elif status == "duplicate":
                 skipped += 1
-            print(f"  {image.name}  {message}")
+            print(f"  [{room}] {image.name}  {message}")
 
         if args.dry_run:
             print(f"\nread {len(images)}, failed {failed} -- dry run, nothing written")
