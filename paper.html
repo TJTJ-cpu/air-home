@@ -1,0 +1,517 @@
+<title>The Gap Beats the Door</title>
+<style>
+  :root {
+    color-scheme: light;
+    --paper:  #f4f6f7;
+    --card:   #ffffff;
+    --ink:    #12161b;
+    --ink-2:  #3d4750;
+    --muted:  #5e6a76;
+    --rule:   #d3dade;
+    --rule-2: #e6eaec;
+    --sealed: #eb6834;
+    --door:   #2a78d6;
+    --fan:    #1baf7a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --paper:  #12161b;
+      --card:   #171c22;
+      --ink:    #eef2f4;
+      --ink-2:  #b6c0c8;
+      --muted:  #8895a1;
+      --rule:   #29323a;
+      --rule-2: #212930;
+      --sealed: #d95926;
+      --door:   #3987e5;
+      --fan:    #199e70;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --paper:  #12161b;
+    --card:   #171c22;
+    --ink:    #eef2f4;
+    --ink-2:  #b6c0c8;
+    --muted:  #8895a1;
+    --rule:   #29323a;
+    --rule-2: #212930;
+    --sealed: #d95926;
+    --door:   #3987e5;
+    --fan:    #199e70;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font: 17px/1.62 Georgia, "Iowan Old Style", Charter, "Times New Roman", serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .sheet { max-width: 52rem; margin: 0 auto; padding: 4rem 1.5rem 6rem; }
+  .col { max-width: 36rem; }
+
+  .eyebrow {
+    font: 600 11px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+    letter-spacing: .13em; text-transform: uppercase; color: var(--muted);
+  }
+
+  header { border-bottom: 2px solid var(--ink); padding-bottom: 1.6rem; margin-bottom: 2rem; }
+  h1 {
+    font-size: clamp(2.1rem, 5vw, 3rem); line-height: 1.06; margin: .7rem 0 .5rem;
+    letter-spacing: -.022em; text-wrap: balance; font-weight: 400;
+  }
+  .deck {
+    font-size: 1.12rem; line-height: 1.45; color: var(--ink-2); margin: 0 0 1.1rem;
+    max-width: 35rem; text-wrap: balance;
+  }
+  .byline {
+    font: 13px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--muted); display: flex; flex-wrap: wrap; gap: .5rem 1.4rem;
+  }
+
+  .abstract {
+    background: var(--card); border: 1px solid var(--rule);
+    padding: 1.5rem 1.7rem; margin: 0 0 3rem;
+  }
+  .abstract p { margin: .7rem 0 0; font-size: 15.5px; line-height: 1.6; }
+  .abstract p:first-of-type { margin-top: .6rem; }
+
+  h2 {
+    font-size: 1.32rem; font-weight: 700; letter-spacing: -.012em;
+    margin: 3.2rem 0 .9rem; display: flex; gap: .7rem; align-items: baseline;
+  }
+  h2 .num {
+    font: 600 .78rem/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--muted); flex: none; padding-top: .28rem;
+    font-variant-numeric: tabular-nums;
+  }
+  h3 {
+    font: 600 1.02rem/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+    margin: 1.9rem 0 .5rem;
+  }
+  p { margin: 0 0 1.05rem; }
+  ul { margin: 0 0 1.05rem; padding-left: 1.15rem; }
+  li { margin-bottom: .5rem; }
+  li::marker { color: var(--muted); }
+
+  .t-sealed { color: var(--sealed); font-weight: 700; }
+  .t-door { color: var(--door); font-weight: 700; }
+  .t-fan { color: var(--fan); font-weight: 700; }
+
+  .conditions {
+    display: grid; gap: 1px; background: var(--rule); border: 1px solid var(--rule);
+    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); margin: 2rem 0 2.6rem;
+  }
+  .cond { background: var(--card); padding: 1.1rem 1.2rem 1.2rem; }
+  .cond .tag {
+    font: 600 11px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+    letter-spacing: .1em; text-transform: uppercase; display: flex;
+    align-items: center; gap: .5rem; margin-bottom: .7rem;
+  }
+  .cond .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .cond h4 {
+    margin: 0 0 .35rem; font: 600 1rem/1.35 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .cond p {
+    margin: 0; font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--ink-2);
+  }
+
+  figure { margin: 2rem 0 2.4rem; }
+  .plot { background: var(--card); border: 1px solid var(--rule); padding: 1.1rem 1rem .4rem; }
+  svg { display: block; width: 100%; height: auto; }
+  .grid { stroke: var(--rule-2); stroke-width: 1; }
+  .thr { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 4; opacity: .85; }
+  .axtitle {
+    font: 600 11px system-ui, -apple-system, "Segoe UI", sans-serif;
+    fill: var(--ink-2); letter-spacing: .01em;
+  }
+  .thrlab, .ax {
+    font: 10.5px system-ui, -apple-system, "Segoe UI", sans-serif;
+    fill: var(--muted); font-variant-numeric: tabular-nums;
+  }
+  .obs { fill: none; stroke-width: 2.1; stroke-linejoin: round; stroke-linecap: round; }
+  .proj { fill: none; stroke-width: 1.3; stroke-dasharray: 2 5; opacity: .7; }
+  .sealed { stroke: var(--sealed); }
+  .door { stroke: var(--door); }
+  .fan { stroke: var(--fan); }
+  figcaption {
+    font: 13.5px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--ink-2); margin-top: .8rem; max-width: 39rem;
+  }
+  figcaption b { color: var(--ink); font-weight: 600; }
+  .key { display: flex; flex-wrap: wrap; gap: .4rem 1.4rem; margin: .9rem 0 0;
+         font: 13px system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .key span { display: flex; align-items: center; gap: .45rem; color: var(--ink-2); }
+  .swatch { width: 17px; height: 3px; border-radius: 2px; flex: none; }
+
+  .scroll { overflow-x: auto; margin: 1.6rem 0 .7rem; }
+  table {
+    border-collapse: collapse; width: 100%; min-width: 34rem;
+    font: 14px system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-variant-numeric: tabular-nums;
+  }
+  caption {
+    text-align: left; font: 600 13px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--muted); padding-bottom: .6rem;
+  }
+  th, td { padding: .52rem .75rem; text-align: right; border-bottom: 1px solid var(--rule-2); }
+  th:first-child, td:first-child { text-align: left; }
+  thead th {
+    border-bottom: 1.5px solid var(--rule); color: var(--muted);
+    font-weight: 600; font-size: 12.5px; white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: 1.5px solid var(--rule); }
+  td.c-sealed { color: var(--sealed); font-weight: 600; }
+  td.c-door { color: var(--door); font-weight: 600; }
+  td.c-fan { color: var(--fan); font-weight: 600; }
+  .best { font-weight: 700; }
+
+  .eq {
+    background: var(--card); border-left: 3px solid var(--rule);
+    padding: 1.1rem 1.2rem; margin: 1.4rem 0;
+    font: 14px/1.7 ui-monospace, SFMono-Regular, Consolas, monospace;
+    overflow-x: auto; color: var(--ink-2);
+  }
+  .eq b { color: var(--ink); font-weight: 600; }
+  .eq .where { display: block; margin-top: .7rem; font-size: 12.5px; color: var(--muted); }
+
+  .callout {
+    border-top: 2px solid var(--ink); border-bottom: 1px solid var(--rule);
+    padding: 1.3rem 0; margin: 2.2rem 0;
+  }
+  .callout p { margin: 0; font-size: 1.12rem; line-height: 1.5; }
+
+  .limits { counter-reset: lim; list-style: none; padding: 0; }
+  .limits li { counter-increment: lim; position: relative; padding-left: 2.1rem; margin-bottom: 1rem; }
+  .limits li::before {
+    content: "L" counter(lim); position: absolute; left: 0; top: .16rem;
+    font: 600 11.5px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--muted); font-variant-numeric: tabular-nums;
+  }
+
+  footer {
+    margin-top: 4rem; padding-top: 1.4rem; border-top: 1px solid var(--rule);
+    font: 13px/1.65 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--muted);
+  }
+  footer p { margin: 0 0 .6rem; }
+  code {
+    font: 13px ui-monospace, SFMono-Regular, Consolas, monospace;
+    background: var(--rule-2); padding: .08em .35em; border-radius: 3px;
+  }
+  @media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+</style>
+
+<div class="sheet">
+  <header>
+    <div class="eyebrow">Single-room ventilation trial &middot; Observational</div>
+    <h1>The Gap Beats the Door</h1>
+    <p class="deck">A fan exhausting through a narrow gap ventilated an occupied bedroom
+      better than a wide-open sliding door &mdash; and let in half as much particulate matter
+      while doing it.</p>
+    <div class="byline">
+      <span>23&ndash;26 August 2026</span>
+      <span>3 nights, 3 configurations</span>
+      <span>2 occupants, sleeping</span>
+      <span>780 observations at 3-minute intervals</span>
+    </div>
+  </header>
+
+  <div class="abstract col">
+    <div class="eyebrow">Abstract</div>
+    <p>Carbon dioxide accumulates overnight in occupied bedrooms because sleeping adults
+      exhale it faster than an unventilated room can dilute it. We measured CO<sub>2</sub>,
+      temperature, humidity and particulates continuously across three consecutive nights in
+      the same room with the same two occupants, changing only the ventilation path: all doors
+      closed; one sliding door fully open; and a door left ajar with a fan exhausting room air
+      outward.</p>
+    <p>Fitting a single-zone mass-balance model with a shared occupant source term gives air
+      exchange rates of <span class="t-sealed">0.10&nbsp;h<sup>&minus;1</sup></span> sealed,
+      <span class="t-door">0.27&nbsp;h<sup>&minus;1</sup></span> with the door open, and
+      <span class="t-fan">0.33&nbsp;h<sup>&minus;1</sup></span> with the fan &mdash; a 2.7&times;
+      and 3.3&times; improvement respectively. Peak CO<sub>2</sub> fell from 1496 to 1064 to
+      979&nbsp;ppm. The fan configuration is the first whose fitted equilibrium
+      (934&nbsp;ppm) sits <em>below</em> the 1000&nbsp;ppm guideline, meaning it would stay
+      under that threshold however long the night ran; it never crossed it once.</p>
+    <p>Particulates did not follow the same order. The fully open door more than doubled mean
+      PM2.5 relative to the sealed night; the fan through a narrow gap raised it far less. On
+      both CO<sub>2</sub> and particulates, the smaller opening with active extraction beat
+      the larger passive one.</p>
+    <p>With one night per configuration these results cannot be separated from ordinary
+      night-to-night variation. They are reported as three well-characterised observations,
+      not a controlled result.</p>
+  </div>
+
+  <h2><span class="num">01</span> The three configurations</h2>
+  <div class="conditions">
+    <div class="cond">
+      <div class="tag" style="color:var(--sealed)"><i class="dot" style="background:var(--sealed)"></i>Night 1 &middot; 23 Aug</div>
+      <h4>Sealed</h4>
+      <p>Every door closed. No fan. The control condition, and the one most bedrooms default
+        to overnight.</p>
+    </div>
+    <div class="cond">
+      <div class="tag" style="color:var(--door)"><i class="dot" style="background:var(--door)"></i>Night 2 &middot; 24 Aug</div>
+      <h4>Sliding door open</h4>
+      <p>One sliding door left fully open. Passive ventilation only &mdash; air moves by
+        temperature difference and whatever breeze exists.</p>
+    </div>
+    <div class="cond">
+      <div class="tag" style="color:var(--fan)"><i class="dot" style="background:var(--fan)"></i>Night 3 &middot; 25 Aug</div>
+      <h4>Gap plus exhaust fan</h4>
+      <p>Door open only slightly, with a fan inside the room blowing air out through the gap.
+        Active extraction through a small opening.</p>
+    </div>
+  </div>
+  <div class="col">
+    <p>Occupancy, bedding, clothing and the room itself were unchanged across all three
+      nights. Two adults slept in the room each night. Only the ventilation path differed.</p>
+  </div>
+
+  <h2><span class="num">02</span> Method</h2>
+
+  <h3>2.1 &nbsp;Instrumentation</h3>
+  <div class="col">
+    <p>Readings came from a consumer air quality monitor (INKBIRD PLUS) reporting
+      CO<sub>2</sub>, temperature, relative humidity, AQI, PM2.5 and PM10. The device has a
+      display but no data output of any kind &mdash; no app, no logging, no port.</p>
+    <p>To capture it, a webcam photographed the display every three minutes and a
+      vision-language model (Qwen3-VL-8B, running locally) transcribed the digits from each
+      photograph into a database. Each reading is timestamped from the host computer's clock
+      at the moment of capture, not from the clock shown on the device, which was found to
+      drift. Values outside physically plausible bounds were rejected as misreads rather than
+      stored.</p>
+  </div>
+
+  <h3>2.2 &nbsp;Defining a night</h3>
+  <div class="col">
+    <p>A night runs 20:00 to 09:00 local time, deliberately wider than sleep itself. The hour
+      before bed establishes the baseline the climb is measured from, and the hour after waking
+      captures how quickly the room clears. Analysis of the build-up begins at the
+      CO<sub>2</sub> minimum preceding the peak, which marks the room closing up.</p>
+  </div>
+
+  <h3>2.3 &nbsp;Model, and why the source term is shared</h3>
+  <div class="col">
+    <p>Treating the room as a single well-mixed zone with a constant source and constant
+      exchange with outdoor air gives a first-order mass balance whose solution is:</p>
+  </div>
+  <div class="eq">
+    <b>C(t) = C<sub>out</sub> + (S/&lambda;)(1 &minus; e<sup>&minus;&lambda;t</sup>)
+      + (C<sub>0</sub> &minus; C<sub>out</sub>)e<sup>&minus;&lambda;t</sup></b>
+    <span class="where">&lambda; &mdash; air changes per hour (h<sup>&minus;1</sup>)
+      &nbsp;&middot;&nbsp; S &mdash; source strength, occupant CO<sub>2</sub> per room volume
+      (ppm&thinsp;h<sup>&minus;1</sup>) &nbsp;&middot;&nbsp; C<sub>0</sub> &mdash;
+      concentration at occupancy &nbsp;&middot;&nbsp; C<sub>out</sub> &mdash; outdoor
+      baseline, 401&nbsp;ppm from the 1st percentile of all readings</span>
+  </div>
+  <div class="col">
+    <p>Fitting &lambda; and S freely for each night separately produces an incoherent result:
+      the fan night comes out with a source strength of 99&nbsp;ppm/h against the sealed
+      night's 189, as though the occupants had exhaled half as much CO<sub>2</sub>. They had
+      not. The two parameters trade off against one another, and a build-up that never reaches
+      equilibrium does not constrain them independently.</p>
+    <p>Since the same two people slept in the same room every night, S <em>must</em> be
+      constant. We therefore fit all three nights jointly: one shared S, one &lambda; per
+      night, minimising total squared residuals. This is both more defensible and more
+      informative, and it is the fit reported throughout. The best-fit shared source strength
+      is <strong>176.5&nbsp;ppm/h</strong>.</p>
+  </div>
+
+  <h2><span class="num">03</span> Results</h2>
+
+  <figure>
+    <div class="plot"><svg viewBox="0 0 760 320" role="img"
+  aria-label="Carbon dioxide against hours since occupancy for three nights: sealed, sliding door open, and door ajar with an exhaust fan">
+  <line class="grid" x1="62" y1="270.0" x2="742" y2="270.0"/><text class="ax" x="53" y="274.0" text-anchor="end">400</text><line class="grid" x1="62" y1="186.0" x2="742" y2="186.0"/><text class="ax" x="53" y="190.0" text-anchor="end">800</text><line class="grid" x1="62" y1="102.0" x2="742" y2="102.0"/><text class="ax" x="53" y="106.0" text-anchor="end">1200</text><line class="grid" x1="62" y1="18.0" x2="742" y2="18.0"/><text class="ax" x="53" y="22.0" text-anchor="end">1600</text>
+  <line class="thr" x1="62" y1="144.0" x2="742" y2="144.0"/>
+  <text class="thrlab" x="69" y="137.0">1000 ppm guideline</text>
+  <path class="proj sealed" d="M62.0 261.8 L64.8 259.9 L67.7 257.9 L70.5 256.0 L73.4 254.0 L76.2 252.1 L79.1 250.2 L81.9 248.3 L84.8 246.4 L87.6 244.5 L90.5 242.7 L93.3 240.8 L96.1 239.0 L99.0 237.1 L101.8 235.3 L104.7 233.5 L107.5 231.7 L110.4 229.9 L113.2 228.1 L116.1 226.3 L118.9 224.6 L121.7 222.8 L124.6 221.0 L127.4 219.3 L130.3 217.6 L133.1 215.8 L136.0 214.1 L138.8 212.4 L141.7 210.7 L144.5 209.1 L147.4 207.4 L150.2 205.7 L153.0 204.0 L155.9 202.4 L158.7 200.8 L161.6 199.1 L164.4 197.5 L167.3 195.9 L170.1 194.3 L173.0 192.7 L175.8 191.1 L178.7 189.5 L181.5 187.9 L184.3 186.4 L187.2 184.8 L190.0 183.3 L192.9 181.7 L195.7 180.2 L198.6 178.7 L201.4 177.2 L204.3 175.7 L207.1 174.2 L209.9 172.7 L212.8 171.2 L215.6 169.7 L218.5 168.3 L221.3 166.8 L224.2 165.4 L227.0 163.9 L229.9 162.5 L232.7 161.1 L235.6 159.6 L238.4 158.2 L241.2 156.8 L244.1 155.4 L246.9 154.0 L249.8 152.7 L252.6 151.3 L255.5 149.9 L258.3 148.6 L261.2 147.2 L264.0 145.9 L266.9 144.5 L269.7 143.2 L272.5 141.9 L275.4 140.6 L278.2 139.2 L281.1 137.9 L283.9 136.6 L286.8 135.4 L289.6 134.1 L292.5 132.8 L295.3 131.5 L298.2 130.3 L301.0 129.0 L303.8 127.8 L306.7 126.5 L309.5 125.3 L312.4 124.1 L315.2 122.9 L318.1 121.6 L320.9 120.4 L323.8 119.2 L326.6 118.0 L329.4 116.8 L332.3 115.7 L335.1 114.5 L338.0 113.3 L340.8 112.2 L343.7 111.0 L346.5 109.9 L349.4 108.7 L352.2 107.6 L355.1 106.4 L357.9 105.3 L360.7 104.2 L363.6 103.1 L366.4 102.0 L369.3 100.9 L372.1 99.8 L375.0 98.7 L377.8 97.6 L380.7 96.5 L383.5 95.4 L386.4 94.4 L389.2 93.3 L392.0 92.3 L394.9 91.2 L397.7 90.2 L400.6 89.1 L403.4 88.1 L406.3 87.1 L409.1 86.0 L412.0 85.0 L414.8 84.0 L417.6 83.0 L420.5 82.0 L423.3 81.0 L426.2 80.0 L429.0 79.0 L431.9 78.1 L434.7 77.1 L437.6 76.1 L440.4 75.2 L443.3 74.2 L446.1 73.3 L448.9 72.3 L451.8 71.4 L454.6 70.4 L457.5 69.5 L460.3 68.6 L463.2 67.6 L466.0 66.7 L468.9 65.8 L471.7 64.9 L474.6 64.0 L477.4 63.1 L480.2 62.2 L483.1 61.3 L485.9 60.4 L488.8 59.6 L491.6 58.7 L494.5 57.8 L497.3 57.0 L500.2 56.1 L503.0 55.2 L505.8 54.4 L508.7 53.5 L511.5 52.7 L514.4 51.9 L517.2 51.0 L520.1 50.2 L522.9 49.4 L525.8 48.6 L528.6 47.7 L531.5 46.9 L534.3 46.1 L537.1 45.3 L540.0 44.5 L542.8 43.7 L545.7 42.9 L548.5 42.2 L551.4 41.4 L554.2 40.6 L557.1 39.8 L559.9 39.1 L562.8 38.3 L565.6 37.5 L568.4 36.8 L571.3 36.0 L574.1 35.3 L577.0 34.5 L579.8 33.8 L582.7 33.1 L585.5 32.3 L588.4 31.6 L591.2 30.9 L594.1 30.2 L596.9 29.4 L599.7 28.7 L602.6 28.0 L605.4 27.3 L608.3 26.6 L611.1 25.9 L614.0 25.2 L616.8 24.5 L619.7 23.8 L622.5 23.2 L625.3 22.5 L628.2 21.8 L631.0 21.1 L633.9 20.5 L636.7 19.8 L639.6 19.1 L642.4 18.5"/><path class="proj door" d="M62.0 239.1 L64.8 237.6 L67.7 236.1 L70.5 234.5 L73.4 233.1 L76.2 231.6 L79.1 230.2 L81.9 228.7 L84.8 227.3 L87.6 226.0 L90.5 224.6 L93.3 223.3 L96.1 222.0 L99.0 220.7 L101.8 219.4 L104.7 218.1 L107.5 216.9 L110.4 215.6 L113.2 214.4 L116.1 213.2 L118.9 212.1 L121.7 210.9 L124.6 209.8 L127.4 208.6 L130.3 207.5 L133.1 206.4 L136.0 205.4 L138.8 204.3 L141.7 203.3 L144.5 202.2 L147.4 201.2 L150.2 200.2 L153.0 199.2 L155.9 198.3 L158.7 197.3 L161.6 196.4 L164.4 195.4 L167.3 194.5 L170.1 193.6 L173.0 192.7 L175.8 191.8 L178.7 191.0 L181.5 190.1 L184.3 189.3 L187.2 188.5 L190.0 187.6 L192.9 186.8 L195.7 186.0 L198.6 185.3 L201.4 184.5 L204.3 183.7 L207.1 183.0 L209.9 182.3 L212.8 181.5 L215.6 180.8 L218.5 180.1 L221.3 179.4 L224.2 178.7 L227.0 178.1 L229.9 177.4 L232.7 176.7 L235.6 176.1 L238.4 175.5 L241.2 174.8 L244.1 174.2 L246.9 173.6 L249.8 173.0 L252.6 172.4 L255.5 171.8 L258.3 171.3 L261.2 170.7 L264.0 170.1 L266.9 169.6 L269.7 169.0 L272.5 168.5 L275.4 168.0 L278.2 167.5 L281.1 167.0 L283.9 166.4 L286.8 166.0 L289.6 165.5 L292.5 165.0 L295.3 164.5 L298.2 164.0 L301.0 163.6 L303.8 163.1 L306.7 162.7 L309.5 162.2 L312.4 161.8 L315.2 161.4 L318.1 160.9 L320.9 160.5 L323.8 160.1 L326.6 159.7 L329.4 159.3 L332.3 158.9 L335.1 158.5 L338.0 158.1 L340.8 157.8 L343.7 157.4 L346.5 157.0 L349.4 156.7 L352.2 156.3 L355.1 156.0 L357.9 155.6 L360.7 155.3 L363.6 155.0 L366.4 154.6 L369.3 154.3 L372.1 154.0 L375.0 153.7 L377.8 153.4 L380.7 153.0 L383.5 152.7 L386.4 152.4 L389.2 152.2 L392.0 151.9 L394.9 151.6 L397.7 151.3 L400.6 151.0 L403.4 150.7 L406.3 150.5 L409.1 150.2 L412.0 149.9 L414.8 149.7 L417.6 149.4 L420.5 149.2 L423.3 148.9 L426.2 148.7 L429.0 148.5 L431.9 148.2 L434.7 148.0 L437.6 147.8 L440.4 147.5 L443.3 147.3 L446.1 147.1 L448.9 146.9 L451.8 146.7 L454.6 146.5 L457.5 146.2 L460.3 146.0 L463.2 145.8 L466.0 145.6 L468.9 145.5 L471.7 145.3 L474.6 145.1 L477.4 144.9 L480.2 144.7 L483.1 144.5 L485.9 144.3 L488.8 144.2 L491.6 144.0 L494.5 143.8 L497.3 143.6 L500.2 143.5 L503.0 143.3 L505.8 143.2 L508.7 143.0 L511.5 142.8 L514.4 142.7 L517.2 142.5 L520.1 142.4 L522.9 142.2 L525.8 142.1 L528.6 141.9 L531.5 141.8 L534.3 141.7 L537.1 141.5 L540.0 141.4 L542.8 141.3 L545.7 141.1 L548.5 141.0 L551.4 140.9 L554.2 140.7 L557.1 140.6 L559.9 140.5 L562.8 140.4 L565.6 140.3 L568.4 140.1 L571.3 140.0 L574.1 139.9 L577.0 139.8 L579.8 139.7 L582.7 139.6 L585.5 139.5 L588.4 139.4 L591.2 139.3 L594.1 139.2 L596.9 139.1 L599.7 139.0 L602.6 138.9 L605.4 138.8 L608.3 138.7 L611.1 138.6 L614.0 138.5 L616.8 138.4 L619.7 138.3 L622.5 138.2 L625.3 138.1 L628.2 138.0 L631.0 138.0 L633.9 137.9 L636.7 137.8 L639.6 137.7 L642.4 137.6 L645.3 137.5 L648.1 137.5 L651.0 137.4 L653.8 137.3 L656.6 137.2 L659.5 137.2 L662.3 137.1 L665.2 137.0 L668.0 137.0 L670.9 136.9 L673.7 136.8 L676.6 136.8 L679.4 136.7 L682.3 136.6 L685.1 136.6 L687.9 136.5 L690.8 136.4 L693.6 136.4 L696.5 136.3 L699.3 136.2 L702.2 136.2 L705.0 136.1 L707.9 136.1 L710.7 136.0 L713.5 136.0 L716.4 135.9 L719.2 135.9 L722.1 135.8 L724.9 135.7 L727.8 135.7 L730.6 135.6 L733.5 135.6 L736.3 135.5 L739.2 135.5 L742.0 135.4"/><path class="proj fan" d="M62.0 237.0 L64.8 235.6 L67.7 234.2 L70.5 232.9 L73.4 231.5 L76.2 230.2 L79.1 228.9 L81.9 227.7 L84.8 226.4 L87.6 225.2 L90.5 224.0 L93.3 222.8 L96.1 221.7 L99.0 220.6 L101.8 219.4 L104.7 218.3 L107.5 217.3 L110.4 216.2 L113.2 215.2 L116.1 214.2 L118.9 213.2 L121.7 212.2 L124.6 211.2 L127.4 210.3 L130.3 209.3 L133.1 208.4 L136.0 207.5 L138.8 206.6 L141.7 205.8 L144.5 204.9 L147.4 204.1 L150.2 203.2 L153.0 202.4 L155.9 201.6 L158.7 200.9 L161.6 200.1 L164.4 199.3 L167.3 198.6 L170.1 197.9 L173.0 197.2 L175.8 196.5 L178.7 195.8 L181.5 195.1 L184.3 194.4 L187.2 193.8 L190.0 193.2 L192.9 192.5 L195.7 191.9 L198.6 191.3 L201.4 190.7 L204.3 190.1 L207.1 189.6 L209.9 189.0 L212.8 188.4 L215.6 187.9 L218.5 187.4 L221.3 186.8 L224.2 186.3 L227.0 185.8 L229.9 185.3 L232.7 184.8 L235.6 184.3 L238.4 183.9 L241.2 183.4 L244.1 182.9 L246.9 182.5 L249.8 182.1 L252.6 181.6 L255.5 181.2 L258.3 180.8 L261.2 180.4 L264.0 180.0 L266.9 179.6 L269.7 179.2 L272.5 178.8 L275.4 178.4 L278.2 178.1 L281.1 177.7 L283.9 177.4 L286.8 177.0 L289.6 176.7 L292.5 176.3 L295.3 176.0 L298.2 175.7 L301.0 175.4 L303.8 175.1 L306.7 174.8 L309.5 174.4 L312.4 174.2 L315.2 173.9 L318.1 173.6 L320.9 173.3 L323.8 173.0 L326.6 172.8 L329.4 172.5 L332.3 172.2 L335.1 172.0 L338.0 171.7 L340.8 171.5 L343.7 171.2 L346.5 171.0 L349.4 170.8 L352.2 170.5 L355.1 170.3 L357.9 170.1 L360.7 169.9 L363.6 169.6 L366.4 169.4 L369.3 169.2 L372.1 169.0 L375.0 168.8 L377.8 168.6 L380.7 168.4 L383.5 168.2 L386.4 168.1 L389.2 167.9 L392.0 167.7 L394.9 167.5 L397.7 167.3 L400.6 167.2 L403.4 167.0 L406.3 166.8 L409.1 166.7 L412.0 166.5 L414.8 166.4 L417.6 166.2 L420.5 166.1 L423.3 165.9 L426.2 165.8 L429.0 165.6 L431.9 165.5 L434.7 165.4 L437.6 165.2 L440.4 165.1 L443.3 165.0 L446.1 164.8 L448.9 164.7 L451.8 164.6 L454.6 164.5 L457.5 164.4 L460.3 164.2 L463.2 164.1 L466.0 164.0 L468.9 163.9 L471.7 163.8 L474.6 163.7 L477.4 163.6 L480.2 163.5 L483.1 163.4 L485.9 163.3 L488.8 163.2 L491.6 163.1 L494.5 163.0 L497.3 162.9 L500.2 162.8 L503.0 162.7 L505.8 162.6 L508.7 162.5 L511.5 162.5 L514.4 162.4 L517.2 162.3 L520.1 162.2 L522.9 162.1 L525.8 162.1 L528.6 162.0 L531.5 161.9 L534.3 161.8 L537.1 161.8 L540.0 161.7 L542.8 161.6 L545.7 161.6 L548.5 161.5 L551.4 161.4 L554.2 161.4 L557.1 161.3 L559.9 161.2 L562.8 161.2 L565.6 161.1 L568.4 161.1 L571.3 161.0 L574.1 160.9 L577.0 160.9 L579.8 160.8 L582.7 160.8 L585.5 160.7 L588.4 160.7 L591.2 160.6 L594.1 160.6 L596.9 160.5 L599.7 160.5 L602.6 160.4 L605.4 160.4 L608.3 160.3 L611.1 160.3 L614.0 160.2 L616.8 160.2 L619.7 160.2 L622.5 160.1 L625.3 160.1 L628.2 160.0 L631.0 160.0 L633.9 160.0 L636.7 159.9 L639.6 159.9 L642.4 159.8 L645.3 159.8 L648.1 159.8 L651.0 159.7 L653.8 159.7 L656.6 159.7 L659.5 159.6 L662.3 159.6 L665.2 159.6 L668.0 159.5 L670.9 159.5 L673.7 159.5 L676.6 159.4 L679.4 159.4 L682.3 159.4 L685.1 159.4 L687.9 159.3 L690.8 159.3 L693.6 159.3 L696.5 159.2 L699.3 159.2 L702.2 159.2 L705.0 159.2 L707.9 159.1 L710.7 159.1 L713.5 159.1 L716.4 159.1 L719.2 159.1 L722.1 159.0 L724.9 159.0 L727.8 159.0 L730.6 159.0 L733.5 158.9 L736.3 158.9 L739.2 158.9 L742.0 158.9"/><path class="obs sealed" d="M62.0 261.8 L64.6 260.1 L67.3 258.2 L69.9 255.3 L72.5 250.7 L75.1 248.8 L77.8 248.2 L80.4 244.4 L83.0 244.6 L85.6 243.8 L88.3 245.0 L90.9 243.5 L93.5 245.6 L96.1 244.8 L98.8 246.3 L101.4 245.0 L104.0 245.6 L109.3 244.8 L111.9 245.6 L114.5 244.4 L117.1 244.8 L119.8 246.3 L122.4 246.7 L125.0 247.9 L127.6 247.7 L130.3 244.4 L132.9 243.3 L135.5 244.0 L138.1 244.4 L140.8 244.8 L143.4 243.5 L146.0 244.8 L148.6 246.5 L151.3 244.0 L153.9 244.6 L156.5 244.8 L159.1 242.5 L161.8 238.5 L164.4 231.6 L167.0 223.6 L169.6 217.5 L172.3 215.0 L174.9 208.9 L177.5 206.8 L180.1 208.5 L182.8 207.0 L185.4 204.7 L188.0 198.0 L190.7 192.9 L193.3 189.2 L195.9 186.6 L198.5 183.5 L201.2 177.0 L203.8 170.9 L206.4 167.1 L209.0 163.1 L211.7 161.0 L214.3 164.2 L216.9 161.8 L219.5 162.1 L222.2 161.2 L224.8 155.3 L227.4 152.4 L230.0 153.2 L232.7 153.7 L235.3 149.0 L237.9 147.1 L240.5 145.1 L243.2 137.7 L245.8 139.0 L248.4 133.3 L251.0 132.4 L253.7 136.4 L256.3 132.7 L258.9 130.6 L261.5 130.1 L264.2 128.5 L266.8 128.9 L269.4 128.7 L272.0 126.1 L274.7 124.5 L277.3 122.6 L279.9 121.3 L282.6 121.3 L285.2 121.1 L287.8 121.1 L290.4 116.5 L293.1 118.2 L295.7 119.0 L298.3 115.2 L300.9 113.1 L303.6 112.7 L306.2 108.3 L308.8 111.2 L311.4 104.9 L314.1 107.0 L316.7 107.7 L319.3 104.5 L321.9 105.1 L324.6 106.6 L327.2 103.7 L329.8 100.5 L332.4 103.1 L335.1 101.6 L337.7 102.2 L340.3 101.6 L342.9 99.5 L345.6 95.9 L348.2 98.0 L350.8 98.4 L353.4 97.0 L356.1 95.7 L358.7 95.1 L361.3 92.8 L363.9 93.0 L366.6 93.2 L369.2 91.5 L371.8 91.9 L374.4 90.2 L377.1 89.2 L379.7 87.7 L382.3 89.2 L384.9 83.3 L387.6 82.9 L390.2 84.4 L392.8 84.6 L395.4 83.7 L398.1 83.7 L400.7 85.4 L403.3 85.0 L405.9 81.0 L408.6 80.2 L411.2 76.2 L413.8 79.3 L416.4 76.8 L419.1 75.8 L421.7 75.1 L424.3 75.8 L426.9 76.8 L429.6 75.1 L432.2 74.1 L434.8 73.9 L437.5 71.5 L440.1 71.5 L442.7 69.0 L445.3 66.3 L448.0 70.1 L450.6 69.7 L453.2 70.5 L455.8 66.5 L458.5 62.9 L461.1 65.2 L463.7 68.8 L466.3 68.6 L469.0 66.7 L471.6 68.0 L474.2 64.6 L476.8 65.7 L479.5 62.7 L482.1 61.3 L484.7 61.7 L487.3 63.4 L490.0 60.8 L492.6 60.4 L495.2 60.6 L497.8 59.0 L500.5 59.0 L503.1 60.2 L505.7 57.5 L508.3 55.6 L511.0 56.6 L513.6 56.9 L516.2 57.3 L518.8 54.8 L521.5 53.9 L524.1 54.5 L526.7 56.4 L529.3 52.4 L532.0 52.2 L534.6 55.6 L537.2 53.1 L539.8 55.0 L542.5 54.8 L545.1 47.4 L547.7 48.5 L550.3 50.8 L553.0 49.5 L555.6 49.1 L558.2 47.8 L560.8 50.3 L563.5 48.9 L566.1 49.7 L568.7 48.9 L571.3 44.2 L574.0 46.1 L576.6 47.4 L579.2 46.6 L581.8 47.2 L584.5 41.3 L587.1 43.8 L589.7 44.0 L592.4 43.0 L595.0 39.8 L597.6 45.7 L600.2 42.2 L602.9 45.5 L605.5 46.6 L608.1 45.7 L610.7 44.9 L613.4 51.6 L616.0 76.4 L618.6 83.9 L621.2 99.3 L623.9 111.7 L626.5 120.3 L629.1 125.3 L631.7 120.1 L634.4 122.4 L637.0 125.3 L639.6 126.4 L642.2 130.1 L644.9 134.6 L650.1 144.2 L652.7 151.8 L655.4 153.7 L658.0 164.4 L660.6 181.8 L663.2 177.8 L665.9 179.1 L668.5 183.1 L671.1 186.0 L673.7 182.2 L676.4 189.2 L679.0 201.5 L681.6 203.9 L684.2 211.0 L686.9 216.7 L689.5 220.0 L692.1 217.9 L694.7 220.2 L697.4 220.0 L700.0 220.0 L702.6 225.5 L705.2 220.9 L707.9 222.8 L710.5 225.7 L713.1 228.8 L715.7 225.1 L718.4 226.3 L721.0 225.5 L723.6 235.6 L726.2 240.6 L728.9 238.7 L731.5 241.2 L734.1 246.7 L736.7 245.0 L739.4 239.8 L742.0 245.8"/><path class="obs door" d="M62.0 239.1 L64.6 238.3 L67.3 237.2 L69.9 237.0 L72.5 229.3 L75.1 227.2 L77.8 224.0 L80.4 220.9 L83.0 217.3 L85.6 216.9 L88.3 215.8 L90.9 215.2 L93.5 213.9 L96.1 209.7 L98.8 209.5 L101.4 209.7 L104.0 208.0 L106.6 207.4 L109.3 206.6 L111.9 207.0 L114.5 205.1 L117.1 203.6 L119.8 204.5 L122.4 202.8 L125.0 200.5 L127.6 200.7 L130.3 200.5 L132.9 199.7 L135.5 197.1 L138.1 195.9 L140.8 196.1 L143.4 196.1 L146.0 195.9 L148.6 198.4 L151.3 200.1 L153.9 197.6 L156.5 196.7 L159.1 195.7 L161.8 195.2 L164.4 193.3 L167.0 195.7 L169.6 195.2 L172.3 191.2 L174.9 193.1 L177.5 191.9 L180.1 192.5 L182.8 192.3 L185.4 193.8 L188.0 191.2 L190.6 189.6 L193.3 189.8 L195.9 188.1 L198.5 188.5 L201.1 189.4 L203.8 188.3 L206.4 186.2 L209.0 184.3 L211.6 184.7 L214.3 184.9 L216.9 182.2 L219.5 184.7 L222.2 185.2 L224.8 182.4 L227.4 182.2 L230.0 181.4 L232.7 181.8 L235.3 179.1 L237.9 182.2 L240.5 180.3 L243.2 179.5 L245.8 179.3 L248.4 176.5 L251.0 176.8 L253.7 175.9 L256.3 174.7 L258.9 176.3 L261.5 174.5 L264.2 176.5 L266.8 176.1 L269.4 174.5 L272.0 173.0 L274.7 171.9 L277.3 174.2 L279.9 172.8 L282.5 173.0 L285.2 171.5 L287.8 170.2 L290.4 169.6 L293.0 168.8 L295.7 169.2 L298.3 171.5 L300.9 169.0 L303.5 166.9 L306.2 166.5 L308.8 164.2 L311.4 166.1 L314.0 166.5 L316.7 166.1 L319.3 166.9 L321.9 165.0 L324.5 167.7 L327.2 164.6 L329.8 161.0 L332.4 161.2 L335.0 161.4 L337.7 164.6 L340.3 162.3 L342.9 162.1 L345.5 158.1 L348.2 158.1 L350.8 159.3 L353.4 156.4 L356.0 157.9 L358.7 159.5 L361.3 161.4 L363.9 160.0 L366.5 159.3 L369.2 157.0 L371.8 156.6 L374.4 155.8 L377.1 155.5 L379.7 156.4 L382.3 157.0 L384.9 154.3 L387.6 155.3 L390.2 155.8 L392.8 150.3 L395.4 152.8 L398.1 152.8 L400.7 156.2 L403.3 152.2 L405.9 152.6 L408.6 150.1 L411.2 148.6 L413.8 149.2 L416.4 149.0 L419.1 151.1 L421.7 150.1 L424.3 150.7 L426.9 148.2 L429.6 148.4 L432.2 149.5 L434.8 148.8 L437.4 148.8 L440.1 145.9 L442.7 144.2 L445.3 144.8 L447.9 147.1 L450.6 148.0 L453.2 147.8 L455.8 144.2 L458.4 145.3 L461.1 145.3 L463.7 144.6 L466.3 144.6 L468.9 143.6 L471.6 141.5 L474.2 145.5 L476.8 142.7 L479.4 140.0 L482.1 141.1 L484.7 139.6 L487.3 139.8 L489.9 139.2 L492.6 140.4 L495.2 140.4 L497.8 141.3 L500.4 139.2 L503.1 137.5 L505.7 138.8 L508.3 135.8 L510.9 135.4 L513.6 135.6 L516.2 135.0 L518.8 135.0 L521.4 135.4 L524.1 137.3 L526.7 137.3 L529.3 136.9 L532.0 136.9 L534.6 134.3 L537.2 135.0 L539.8 134.1 L542.5 134.6 L545.1 130.6 L547.7 135.4 L550.3 136.2 L553.0 135.0 L555.6 135.4 L558.2 135.8 L560.8 134.6 L563.5 135.0 L566.1 136.4 L568.7 137.9 L571.3 136.0 L574.0 139.2 L576.6 136.2 L579.2 136.2 L581.8 136.4 L584.5 139.4 L587.1 137.3 L589.7 137.7 L592.3 138.8 L595.0 137.7 L597.6 140.8 L600.2 145.3 L602.8 146.3 L605.5 152.6 L608.1 154.1 L610.7 157.0 L613.3 157.9 L616.0 159.5 L618.6 163.3 L621.2 164.6 L623.8 167.7 L626.5 170.5 L629.1 171.9 L631.7 172.6 L634.3 175.5 L637.0 178.6 L639.6 182.6 L642.2 184.9 L644.8 185.6 L647.5 191.7 L650.1 197.1 L652.7 198.2 L655.3 199.4 L658.0 205.7 L660.6 208.5 L663.2 209.7 L665.8 211.6 L668.5 216.7 L671.1 217.7 L673.7 217.3 L676.3 220.2 L679.0 218.5 L681.6 221.5 L684.2 223.4 L686.9 224.8 L689.5 228.0 L692.1 229.1 L694.7 230.5 L697.4 232.6 L700.0 236.0 L702.6 237.7 L705.2 238.1"/><path class="obs fan" d="M62.0 237.0 L64.6 235.6 L67.3 236.8 L69.9 236.6 L72.5 234.5 L75.1 229.5 L77.8 223.8 L80.4 223.0 L83.0 221.1 L85.6 213.5 L88.3 213.3 L90.9 212.9 L93.5 211.6 L96.1 213.1 L98.8 215.4 L101.4 219.6 L104.0 217.5 L106.6 217.1 L109.3 220.4 L111.9 222.1 L114.5 224.6 L117.1 224.0 L119.8 224.4 L122.4 224.2 L125.0 224.2 L127.7 224.4 L130.3 224.6 L132.9 224.6 L135.5 224.8 L138.2 218.3 L140.8 213.9 L143.4 216.7 L146.0 211.6 L148.7 209.7 L151.3 209.7 L153.9 212.5 L156.5 211.6 L159.2 209.5 L161.8 210.8 L164.4 208.7 L167.0 208.0 L169.7 208.7 L172.3 211.2 L174.9 209.1 L177.5 209.9 L180.2 208.7 L182.8 207.0 L185.4 206.4 L188.0 207.6 L190.7 207.0 L193.3 205.7 L195.9 204.5 L198.5 209.7 L201.2 204.1 L203.8 203.2 L206.4 202.2 L209.0 204.5 L211.7 200.5 L214.3 200.3 L216.9 200.7 L219.5 198.2 L222.2 198.4 L224.8 194.6 L227.4 194.8 L230.0 194.4 L232.7 192.3 L235.3 192.3 L237.9 195.5 L240.5 194.2 L243.2 192.9 L245.8 190.8 L248.4 190.4 L251.0 189.8 L253.7 188.9 L256.3 189.4 L258.9 188.5 L261.5 184.7 L264.2 184.5 L266.8 185.2 L269.4 187.3 L272.0 187.3 L274.7 186.4 L277.3 185.6 L279.9 183.9 L282.6 182.0 L285.2 182.6 L287.8 184.1 L290.4 184.3 L293.1 182.8 L295.7 181.8 L298.3 180.3 L300.9 181.2 L303.6 181.0 L306.2 180.3 L308.8 181.0 L311.4 178.0 L314.1 178.0 L316.7 178.2 L319.3 176.5 L321.9 177.6 L324.6 179.1 L327.2 181.0 L329.8 177.4 L332.4 176.1 L335.1 176.3 L337.7 175.1 L340.3 173.6 L342.9 175.3 L345.6 177.2 L348.2 174.2 L350.8 174.0 L353.4 173.8 L356.1 172.6 L358.7 171.5 L361.3 173.8 L363.9 172.4 L366.6 171.7 L369.2 172.1 L371.8 171.1 L374.4 169.6 L377.1 171.7 L379.7 175.3 L382.3 175.3 L384.9 173.8 L387.6 171.5 L390.2 171.9 L392.8 169.6 L395.4 170.5 L398.1 168.6 L400.7 168.4 L403.3 169.0 L405.9 166.5 L408.6 166.7 L411.2 165.8 L413.8 164.6 L416.4 164.0 L419.1 165.6 L421.7 165.4 L424.3 165.8 L426.9 166.3 L429.6 163.3 L432.2 165.4 L434.8 162.7 L437.5 162.5 L440.1 165.8 L442.7 165.8 L445.3 161.2 L448.0 161.6 L450.6 163.1 L453.2 159.5 L455.8 158.7 L458.5 158.7 L461.1 161.8 L463.7 160.6 L466.3 161.0 L469.0 159.8 L471.6 158.9 L474.2 157.4 L476.8 156.2 L479.5 158.5 L482.1 159.5 L484.7 157.4 L487.3 156.2 L490.0 155.1 L492.6 155.8 L495.2 158.9 L497.8 157.9 L500.5 158.7 L503.1 154.5 L505.7 153.9 L508.3 152.8 L511.0 149.7 L513.6 153.7 L516.2 155.8 L518.8 155.8 L521.5 154.9 L524.1 155.8 L526.7 152.2 L529.3 153.7 L532.0 153.2 L534.6 152.6 L537.2 153.2 L539.8 155.3 L542.5 155.3 L545.1 153.9 L547.7 152.6 L550.3 153.0 L553.0 153.4 L555.6 150.9 L558.2 151.6 L560.8 152.4 L563.5 152.0 L566.1 150.1 L568.7 150.9 L571.3 151.6 L574.0 151.1 L576.6 149.0 L579.2 148.4 L581.8 152.0 L584.5 152.2 L587.1 151.6 L589.7 151.6 L592.4 151.8 L595.0 152.6 L597.6 153.7 L600.2 153.9 L602.9 155.5 L605.5 156.2 L608.1 156.2 L610.7 160.0 L613.4 162.5 L616.0 165.6 L618.6 167.5 L621.2 170.7 L623.9 172.4 L626.5 176.3 L629.1 181.8 L631.7 189.8 L634.4 191.0 L637.0 193.8 L639.6 196.9 L642.2 198.6 L644.9 201.1 L647.5 205.1 L650.1 210.1 L652.7 208.5 L655.4 211.4 L658.0 211.8 L660.6 213.7 L663.2 216.2 L665.9 217.3 L668.5 221.9 L671.1 220.7 L673.7 224.4 L676.4 225.9 L679.0 225.3 L681.6 224.6 L684.2 225.3 L686.9 225.7 L689.5 229.1 L692.1 232.4 L694.7 233.9 L697.4 236.0 L700.0 237.0 L702.6 237.9 L705.2 241.9 L707.9 241.4 L710.5 234.3 L713.1 236.0 L715.7 237.2 L718.4 240.2 L721.0 242.3 L723.6 244.2 L726.2 248.2"/>
+  <text class="ax" x="62.0" y="288" text-anchor="middle">0h</text><text class="ax" x="167.0" y="288" text-anchor="middle">2h</text><text class="ax" x="272.0" y="288" text-anchor="middle">4h</text><text class="ax" x="377.1" y="288" text-anchor="middle">6h</text><text class="ax" x="482.1" y="288" text-anchor="middle">8h</text><text class="ax" x="587.1" y="288" text-anchor="middle">10h</text><text class="ax" x="692.1" y="288" text-anchor="middle">12h</text>
+  <text class="axtitle" transform="rotate(-90 16 160)" x="16" y="160"
+    text-anchor="middle">CO&#8322; concentration (ppm)</text>
+  <text class="axtitle" x="402" y="312"
+    text-anchor="middle">hours since the room closed up</text>
+</svg></div>
+    <div class="key">
+      <span><i class="swatch" style="background:var(--sealed)"></i>Sealed</span>
+      <span><i class="swatch" style="background:var(--door)"></i>Sliding door open</span>
+      <span><i class="swatch" style="background:var(--fan)"></i>Gap + exhaust fan</span>
+      <span><i class="swatch" style="height:0;border-top:1.3px dashed var(--muted)"></i>fitted model, extrapolated</span>
+    </div>
+    <figcaption><b>Figure 1.</b> CO<sub>2</sub> against hours since the room closed up. Solid
+      lines are measurements; dotted lines are the jointly fitted model continued past the
+      observation window to show where each configuration was heading. The sealed night was
+      still climbing steeply when the occupants woke &mdash; its own fit projects a plateau
+      near 2180&nbsp;ppm, some 680&nbsp;ppm above anything actually recorded. Both ventilated
+      nights had effectively flattened by hour 8, and the fan night flattened below the
+      guideline line.</figcaption>
+  </figure>
+
+  <h3>3.1 &nbsp;What the three nights looked like</h3>
+  <div class="scroll">
+    <table>
+      <caption>Table 1 &mdash; Descriptive statistics</caption>
+      <thead>
+        <tr><th>Measure</th><th>Sealed</th><th>Door open</th><th>Gap + fan</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Readings</td><td>260</td><td>260</td><td>260</td></tr>
+        <tr><td>Window length (h)</td><td>12.95</td><td>12.97</td><td>12.95</td></tr>
+        <tr><td>Occupancy began</td><td>20:00</td><td>20:43</td><td>20:20</td></tr>
+        <tr><td>CO<sub>2</sub> at occupancy (ppm)</td><td>439</td><td>547</td><td>557</td></tr>
+        <tr><td>Peak CO<sub>2</sub> (ppm)</td><td class="c-sealed">1496</td><td class="c-door">1064</td><td class="c-fan best">979</td></tr>
+        <tr><td>Mean CO<sub>2</sub> (ppm)</td><td class="c-sealed">1038</td><td class="c-door">849</td><td class="c-fan best">788</td></tr>
+        <tr><td>Mean temperature (&deg;C)</td><td>26.23</td><td>26.24</td><td>26.46</td></tr>
+        <tr><td>Mean humidity (%)</td><td>64.2</td><td>69.4</td><td>64.0</td></tr>
+        <tr><td>Mean PM2.5 (&micro;g/m&sup3;)</td><td class="best">2.70</td><td>6.16</td><td>3.77</td></tr>
+        <tr><td>Max PM2.5 (&micro;g/m&sup3;)</td><td class="best">10</td><td>30</td><td>18</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>3.2 &nbsp;Fitted ventilation rates</h3>
+  <div class="scroll">
+    <table>
+      <caption>Table 2 &mdash; Joint mass-balance fit, shared source strength S = 176.5 ppm/h</caption>
+      <thead>
+        <tr><th>Parameter</th><th>Sealed</th><th>Door open</th><th>Gap + fan</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Air exchange &lambda; (h<sup>&minus;1</sup>)</td><td class="c-sealed">0.099</td><td class="c-door">0.269</td><td class="c-fan best">0.331</td></tr>
+        <tr><td>Relative to sealed</td><td>&mdash;</td><td class="c-door">2.7&times;</td><td class="c-fan best">3.3&times;</td></tr>
+        <tr><td>Model fit R&sup2;</td><td>0.959</td><td>0.962</td><td>0.894</td></tr>
+        <tr><td>Residual RMSE (ppm)</td><td>69</td><td>24</td><td>38</td></tr>
+        <tr><td>Projected equilibrium (ppm)</td><td class="c-sealed">2178</td><td class="c-door">1056</td><td class="c-fan best">934</td></tr>
+        <tr><td>Fresh air per person (L/s)</td><td class="c-sealed">2.1</td><td class="c-door">5.6</td><td class="c-fan best">6.9</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>3.3 &nbsp;Time spent above each threshold</h3>
+  <div class="scroll">
+    <table>
+      <caption>Table 3 &mdash; Hours above concentration thresholds</caption>
+      <thead>
+        <tr><th>Threshold</th><th>Sealed</th><th>Door open</th><th>Gap + fan</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>&gt; 800 ppm</td><td>9.04 h</td><td>8.36 h</td><td class="best">6.87 h</td></tr>
+        <tr><td>&gt; 1000 ppm</td><td class="c-sealed">7.73 h</td><td class="c-door">2.45 h</td><td class="c-fan best">0.00 h</td></tr>
+        <tr><td>&gt; 1200 ppm</td><td class="c-sealed">5.52 h</td><td>0.00 h</td><td class="best">0.00 h</td></tr>
+        <tr><td>&gt; 1400 ppm</td><td class="c-sealed">2.21 h</td><td>0.00 h</td><td class="best">0.00 h</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout col">
+    <p>The fan configuration is the first whose equilibrium sits below 1000&nbsp;ppm. It did
+      not merely avoid the threshold on this particular night &mdash; on these numbers it
+      cannot reach it, however long the night runs.</p>
+  </div>
+
+  <h2><span class="num">04</span> Discussion</h2>
+  <div class="col">
+    <p><strong>A small opening with a fan beat a large opening without one.</strong> This is
+      the headline finding and it is not obvious in advance. The sliding door presented a far
+      larger aperture than a door left ajar, yet the fan configuration achieved a 23% higher
+      air exchange rate. Passive ventilation depends on whatever pressure difference the
+      weather happens to supply; a fan manufactures one. On a still night the large opening
+      has little to drive flow through it, while the fan works regardless.</p>
+
+    <p><strong>The sealed room was nowhere near finished filling.</strong> Its measured peak
+      was 1496&nbsp;ppm, but the joint fit projects equilibrium at 2178&nbsp;ppm. The occupants
+      woke with the room roughly two thirds of the way to its steady state. A longer night, or
+      a later alarm, would have meant materially worse air &mdash; the measured peak
+      substantially understates how poor that configuration is.</p>
+
+    <p><strong>Ventilation and particulates do not rank the same way.</strong> Mean PM2.5 was
+      lowest sealed (2.70&nbsp;&micro;g/m&sup3;), highest with the door fully open
+      (6.16), and intermediate with the fan (3.77). The open door is a large uncontrolled
+      aperture that lets outdoor particulates in freely. The fan draws makeup air through a
+      much smaller gap, so less gets in per unit of air exchanged. That the fan wins on
+      <em>both</em> axes &mdash; more air changes, fewer particulates &mdash; is the practical
+      result worth keeping. All three nights stayed well below the WHO 24-hour guideline of
+      15&nbsp;&micro;g/m&sup3;, so the trade was not costly here; near a road, or during
+      cooking or burning season, it could be.</p>
+
+    <p><strong>Absolute ventilation is now adequate, just.</strong> Converting the fitted rates
+      gives roughly 2.1&nbsp;L/s of fresh air per person sealed, 5.6 with the door open and
+      6.9 with the fan. Common design guidance for bedrooms sits around 7&ndash;10&nbsp;L/s per
+      person. The fan configuration reaches the bottom of that band; the other two do not come
+      close.</p>
+
+    <p><strong>Model fit is worst for the fan night</strong> (R&sup2; 0.894 against 0.959 and
+      0.962). This is expected and mildly informative. A fan does not produce the smooth,
+      constant exchange the model assumes &mdash; flow depends on the gap, on door position,
+      and on whether anything obstructed it during the night. The residual structure is a hint
+      that the fan night is less well described by a single constant &lambda; than the passive
+      nights are.</p>
+  </div>
+
+  <h2><span class="num">05</span> Limitations</h2>
+  <div class="col">
+    <ul class="limits">
+      <li><strong>One night per configuration.</strong> This remains the binding limitation.
+        With n&nbsp;=&nbsp;1 there is no way to separate the effect of a configuration from
+        ordinary night-to-night variation, because that variation has still never been
+        measured. Repeating any one condition twice would establish it, and nothing here
+        should be treated as a settled effect size until that is done.</li>
+      <li><strong>Not randomised, and confounded with time.</strong> The three conditions ran
+        on three consecutive nights in increasing order of ventilation. Any trend in weather,
+        outdoor CO<sub>2</sub> or household routine across those days is indistinguishable
+        from the intervention &mdash; and a monotone trend would produce exactly the monotone
+        result observed. Alternating the order would break this.</li>
+      <li><strong>The nights did not start identically.</strong> Occupancy began at 20:00,
+        20:43 and 20:20, at 439, 547 and 557&nbsp;ppm respectively. The model accounts for
+        differing starting concentration but not for the differing occupied duration.</li>
+      <li><strong>Readings are not statistically independent.</strong> Lag-1 autocorrelation is
+        0.998 &mdash; consecutive readings three minutes apart are nearly identical. The
+        effective sample size is closer to three nights than to 780 observations, which is why
+        no p-values appear anywhere in this document. A significance test treating these as
+        independent samples would be badly wrong.</li>
+      <li><strong>The single-zone assumption is imperfect.</strong> Inverting the shared source
+        strength for two sleeping adults implies a zone volume near 150&nbsp;m&sup3;, larger
+        than a typical bedroom. The room is evidently not a sealed zone: it exchanges air with
+        the rest of the dwelling, so &lambda; describes a room-plus-adjacent-space zone rather
+        than the bedroom alone. Absolute L/s figures inherit that uncertainty; the ratios
+        between nights are more trustworthy than the absolute values.</li>
+      <li><strong>Uncalibrated sensor, transcribed by a model.</strong> The monitor was never
+        checked against a reference instrument, so absolute accuracy is unknown. Digits were
+        transcribed by a vision model; implausible values were discarded automatically, but a
+        misread falling within plausible bounds would pass undetected.</li>
+    </ul>
+  </div>
+
+  <h2><span class="num">06</span> Conclusion</h2>
+  <div class="col">
+    <p>Across three nights in the same room with the same occupants, air exchange rose from
+      0.10&nbsp;h<sup>&minus;1</sup> sealed to 0.27&nbsp;h<sup>&minus;1</sup> with a sliding
+      door open and 0.33&nbsp;h<sup>&minus;1</sup> with a fan exhausting through a narrow gap.
+      Peak CO<sub>2</sub> fell from 1496 to 979&nbsp;ppm, and the fan night never crossed
+      1000&nbsp;ppm at all &mdash; consistent with a fitted equilibrium of 934&nbsp;ppm, below
+      the threshold by construction rather than by luck.</p>
+    <p>Mechanical extraction through a small gap outperformed a large passive opening on both
+      CO<sub>2</sub> and particulates. If that holds up under repetition, it is a useful
+      result for anyone who would rather not sleep with a door wide open.</p>
+    <p>The next step is not a more elaborate model but more nights: each configuration
+      repeated at least three times, in alternating rather than ascending order, with
+      occupancy recorded explicitly. Only then do these three curves become measurements
+      rather than observations.</p>
+  </div>
+
+  <footer>
+    <p><strong>Data availability.</strong> 1280 readings collected 23&ndash;26 August 2026 at
+      3-minute intervals, stored in SQLite. Per-night summary statistics exportable as CSV via
+      <code>analyze.py --export-nights</code>. Every reading retains the source photograph and
+      a sidecar record of exactly what the transcription model returned.</p>
+    <p><strong>Analysis.</strong> Python 3.13 with pandas and NumPy. Mass-balance parameters
+      fitted by coarse-to-fine grid search over a shared S and per-night &lambda;, minimising
+      total sum of squared residuals across all three build-up phases.</p>
+    <p><strong>Reporting note.</strong> This document describes a household measurement, not a
+      controlled experiment. It is written in the form of a paper because that form makes its
+      assumptions and its limitations legible &mdash; not to imply a level of rigour the
+      design does not have.</p>
+  </footer>
+</div>

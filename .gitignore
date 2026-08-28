@@ -18,6 +18,10 @@ data/process.lock
 # Derived. Regenerate any time with analyze.py / readings.py --csv.
 data/report.html
 data/readings.csv
+data/nights.csv
+
+# Tracked deliberately: data/night_labels.json is your own notes on what each
+# night's experiment changed, not something the program can regenerate.
 
 # Deliberately NOT ignored: data/readings.db -- the readings themselves,
 # ~85 KB today and about 25 MB per year.
