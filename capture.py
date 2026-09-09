@@ -3,7 +3,7 @@
 The filename is the capture time in UTC and is the authoritative timestamp for
 the reading -- the clock shown on the device itself is never trusted.
 
-    python capture.py grandpa --interval 5m
+    python capture.py grandpa            # every 3 minutes
     python capture.py tj --once         # one shot, for checking framing
 
 The room decides which queue the photos land in: captures/<room>/pending/.
@@ -87,8 +87,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("room", help="which room this camera is pointed at, e.g. grandpa, tj")
     parser.add_argument(
-        "--interval", type=parse_interval, default="5m",
-        help="time between shots: 30s, 1m, 5m, 1h (bare number means minutes). Default 5m",
+        "--interval", type=parse_interval, default="3m",
+        help="time between shots: 30s, 1m, 3m, 1h (bare number means minutes). Default 3m",
     )
     parser.add_argument("--once", action="store_true", help="take a single photo and exit")
     parser.add_argument("--count", type=int, default=0, help="stop after N photos (0 = forever)")

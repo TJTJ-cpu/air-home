@@ -103,10 +103,15 @@ To see what you have:
 
     python readings.py --rooms
 
+The report has a **Room** switcher at the top, so you can click between rooms
+in the browser. Each room gets its own file (`data/report-tj.html`), and
+`data/report.html` stays the one to open.
+
 Reports and listings default to whichever room has the newest reading, so most
 of the time you don't need to say. When you do:
 
     python analyze.py --room tj --open
+    python analyze.py --all-rooms          # rebuild every room's report
     python readings.py --room mom
     python prune.py --room tj --incomplete
 
@@ -140,6 +145,27 @@ starts short and grows with your history. Zoomed out, the axis and the hover
 tooltip switch from clock times to dates, so you always know which day a point
 belongs to.
 
+The line is coloured by how healthy the reading is — green when it's fine,
+through amber and orange, to red when it isn't. Four metrics have bands:
+
+| | green | amber | orange | red |
+|---|---|---|---|---|
+| CO₂ (ppm) | ≤800 | 800–1000 | 1000–1400 | >1400 |
+| PM2.5 (µg/m³) | ≤15 | 15–25 | 25–35 | >35 |
+| PM10 (µg/m³) | ≤45 | 45–75 | 75–100 | >100 |
+| AQI | ≤50 | 50–100 | 100–150 | >150 |
+
+PM2.5 and PM10 use the WHO 2021 24-hour guideline and its interim targets; AQI
+uses the US EPA categories. The CO₂ bands are the traffic-light convention used
+by REHVA and most consumer monitors — worth knowing that this is a practical
+convention rather than a health limit. ASHRAE deliberately does *not* set an
+indoor CO₂ threshold, and the old 1000 ppm figure was dropped from its standard
+because people kept reading it as one. High CO₂ means poor ventilation, not
+poison. A key under each chart says what the colours mean.
+
+Temperature and humidity stay a single colour — there's no "unhealthy" band for
+them in the same sense.
+
 Short gaps in the line are drawn straight through — one missed photo shouldn't
 break the chart into pieces. A long gap, like the camera being off for hours,
 still leaves a break, because a straight line across that would be showing you
@@ -147,14 +173,20 @@ data that was never measured.
 
 ### Comparing nights
 
-The dropdown also has a **Nights** section. A night runs from **20:00 to 09:00**
-— wider than actual sleep on purpose, so you get the quiet baseline before bed
-and the drop after you open the door in the morning.
+The dropdown also has a **Nights** section, with the same shape as the ranges:
 
-    python analyze.py --night              # the most recent night
-    python analyze.py --night 2026-08-24   # the night that began that evening
+    Nights, last 3 days · Nights, last week · Nights, all time
 
-Pick any night and you also get a **Nights compared** table: starting CO₂, peak
+Each one strips out the daytime and shows only the night windows, so the chart
+becomes one segment per night, side by side. A night runs from **20:00 to
+09:00** — wider than actual sleep on purpose, so you get the quiet baseline
+before bed and the drop after you open the door in the morning.
+
+    python analyze.py --night          # last 3 nights
+    python analyze.py --night n1w      # last week
+    python analyze.py --night nall     # every night
+
+Each nights view also has a **Nights compared** table: starting CO₂, peak
 and when it happened, how fast it climbed, and how many hours it spent above
 1000 ppm. Every night is measured against the first one, so you can see what a
 change actually did.
@@ -238,3 +270,4 @@ waiting, across every room, faster than the loop manages.
 | `readings.py` | Shows readings in the terminal |
 | `rebuild.py` | Rebuilds the database from photo files |
 | `config.py` | Settings |
+| `selftest.py` | Checks the pipeline still works, in a throwaway folder |

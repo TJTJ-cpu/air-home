@@ -27,7 +27,9 @@ STYLE = """
   --axis:        #c3c2b7;
   --border:      rgba(11,11,11,0.10);
   --series-1:    #2a78d6;
+  --good:        #0ca30c;
   --warning:     #fab219;
+  --serious:     #ec835a;
   --critical:    #d03b3b;
 }
 @media (prefers-color-scheme: dark) {
@@ -87,6 +89,25 @@ h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em
   margin-left: 3px; letter-spacing: 0; }
 .tile .note { font-size: 13px; color: var(--ink-2); margin-top: 4px; }
 
+.rooms {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  margin: 0 0 20px; padding-bottom: 14px; border-bottom: 1px solid var(--border);
+}
+.rooms .lead {
+  font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted); margin-right: 4px;
+}
+.rooms a {
+  font-size: 13px; text-decoration: none; padding: 6px 14px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--ink-2);
+}
+.rooms a:hover { color: var(--ink); }
+/* The current room inverts the ink token, so it reads in both themes. */
+.rooms a[aria-current="page"] {
+  background: var(--ink); border-color: var(--ink); color: var(--page);
+}
+.rooms a:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+
 .daybar { display: flex; align-items: center; gap: 8px; margin: 0 0 18px; flex-wrap: wrap; }
 .daybar select {
   font: inherit; font-size: 14px; padding: 6px 10px; border-radius: 8px;
@@ -139,7 +160,7 @@ h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em
 .peak-dot { fill: var(--series-1); stroke: var(--surface); stroke-width: 2; }
 .peak-label { fill: var(--ink); font-size: 11px; font-weight: 600; }
 .crosshair { stroke: var(--axis); stroke-width: 1; opacity: 0; }
-.cursor-dot { fill: var(--series-1); stroke: var(--surface); stroke-width: 2; opacity: 0; }
+.cursor-dot { fill: var(--ink); stroke: var(--surface); stroke-width: 2; opacity: 0; }
 .hit { fill: transparent; }
 
 .tip {
@@ -149,6 +170,11 @@ h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em
   box-shadow: 0 2px 8px rgba(0,0,0,0.10); color: var(--ink);
 }
 .tip b { font-variant-numeric: tabular-nums; }
+
+.bands { display: flex; flex-wrap: wrap; gap: 3px 10px; margin: 6px 2px 2px;
+  font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.bands span { display: flex; align-items: center; gap: 4px; }
+.bands i { width: 9px; height: 3px; border-radius: 2px; flex: none; }
 
 details, .panel { margin-top: 16px; background: var(--surface);
   border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; }
@@ -263,6 +289,28 @@ if (daybar) {
 # straight line across that would invent data that was never measured.
 GAP_BRIDGE_INTERVALS = 6
 
+_GRADIENT_N = 0  # gradient ids must be unique across a page of many charts
+
+
+def band_key(bands, unit: str, places: int) -> str:
+    """A small legend, so the colour is never the only thing carrying meaning."""
+    if not bands:
+        return ""
+    chips, lower = [], None
+    for upper, role in bands:
+        if upper is None:
+            text = f"&gt;{_fmt(lower, places)}"
+        elif lower is None:
+            text = f"&le;{_fmt(upper, places)}"
+        else:
+            text = f"{_fmt(lower, places)}&ndash;{_fmt(upper, places)}"
+        chips.append(f'<span><i style="background:var(--{role})"></i>{text}</span>')
+        lower = upper
+    body = "".join(chips)
+    tail = f'<span>{html.escape(unit.strip())}</span>' if unit.strip() else ''
+    return f'<div class="bands">{body}{tail}</div>'
+
+
 WIDTH = 460
 PLOT_H = 150
 PAD_L, PAD_R, PAD_T, PAD_B = 46, 14, 12, 26
@@ -324,7 +372,7 @@ def _fmt(value: float, places: int) -> str:
 def line_chart(name: str, unit: str, samples: list[tuple[datetime, float | None]],
                places: int = 0, threshold: float | None = None,
                threshold_label: str = "", width: int = WIDTH,
-               plot_h: int = PLOT_H) -> str:
+               plot_h: int = PLOT_H, bands: list | None = None) -> str:
     """One metric over time. Single series, so no legend -- the title names it.
 
     `width`/`plot_h` are the SVG's own coordinate system, not CSS. A focused
@@ -398,11 +446,44 @@ def line_chart(name: str, unit: str, samples: list[tuple[datetime, float | None]
         previous = moment
         points.append({"x": round(x, 1), "y": round(y, 1),
                        "t": moment.strftime(tip_format), "v": _fmt(value, places)})
-    parts.append(f'<path class="line" d="{" ".join(path)}"/>')
+    # A vertical gradient in user space maps colour to y, and y maps to value,
+    # so the line is coloured by concentration with no extra geometry. Stops
+    # are doubled at each boundary to give a hard edge rather than a blend.
+    stroke_attr = ""
+    if bands:
+        global _GRADIENT_N
+        _GRADIENT_N += 1
+        gid = f"band{_GRADIENT_N}"
+        # Colour depends on value, and y depends on value, so a vertical
+        # gradient in user space colours the line by concentration with no
+        # extra geometry. Read top-down: the highest band sits at y=0. Each
+        # boundary gets two stops at the same offset, giving a hard edge
+        # rather than a wash between bands.
+        roles = [role for _, role in bands][::-1]        # worst first
+        bounds = [upper for upper, _ in bands][:-1][::-1]  # boundary values
+        marks = [f'<stop offset="0" style="stop-color:var(--{roles[0]})"/>']
+        for index, value in enumerate(bounds):
+            offset = min(1.0, max(0.0, py(value) / height))
+            marks.append(f'<stop offset="{offset:.4f}" '
+                         f'style="stop-color:var(--{roles[index]})"/>')
+            marks.append(f'<stop offset="{offset:.4f}" '
+                         f'style="stop-color:var(--{roles[index + 1]})"/>')
+        marks.append(f'<stop offset="1" style="stop-color:var(--{roles[-1]})"/>')
+        parts.insert(0, f'<defs><linearGradient id="{gid}" gradientUnits="userSpaceOnUse" '
+                        f'x1="0" y1="0" x2="0" y2="{height}">{"".join(marks)}'
+                        f'</linearGradient></defs>')
+        stroke_attr = f' style="stroke:url(#{gid})"'
+    parts.append(f'<path class="line" d="{" ".join(path)}"{stroke_attr}/>')
 
     peak = max((s for s in samples if s[1] is not None), key=lambda s: s[1])
     peak_x, peak_y = px(peak[0]), py(peak[1])
-    parts.append(f'<circle class="peak-dot" cx="{peak_x:.1f}" cy="{peak_y:.1f}" r="3.5"/>')
+    peak_fill = ''
+    if bands:
+        role = next((r for upper, r in bands if upper is None or peak[1] <= upper),
+                    bands[-1][1])
+        peak_fill = f' style="fill:var(--{role})"'
+    parts.append(f'<circle class="peak-dot" cx="{peak_x:.1f}" cy="{peak_y:.1f}" '
+                 f'r="3.5"{peak_fill}/>')
     anchor = "end" if peak_x > width * 0.6 else "start"
     offset = -7 if anchor == "end" else 7
     parts.append(f'<text class="peak-label" x="{peak_x + offset:.1f}" '
@@ -421,8 +502,26 @@ def line_chart(name: str, unit: str, samples: list[tuple[datetime, float | None]
         f'</figcaption>'
         f'<svg viewBox="0 0 {width} {height}" role="img" '
         f'aria-label="{html.escape(name)} over time">{"".join(parts)}</svg>'
-        f'<div class="tip"></div></figure>'
+        f'{band_key(bands, unit, places)}<div class="tip"></div></figure>'
     )
+
+
+def room_tabs(rooms: list[str], active: str, href_for) -> str:
+    """Links between the per-room reports.
+
+    Each room is a separate file rather than another pane in this one: panes
+    would multiply the page size by the number of rooms, and the page is
+    already large. Plain links keep every file the size of one room, and they
+    work over file:// with no server.
+    """
+    if len(rooms) < 2:
+        return ""
+    links = "".join(
+        f'<a href="{html.escape(href_for(name))}"'
+        f'{" aria-current=\"page\"" if name == active else ""}>{html.escape(name)}</a>'
+        for name in rooms
+    )
+    return f'<nav class="rooms"><span class="lead">Room</span>{links}</nav>'
 
 
 def day_bar(groups: list[tuple[str, list[tuple[str, str]]]], active: str,
@@ -493,7 +592,7 @@ def section(title: str, body: str, collapsed: bool | None = None) -> str:
     return (f'<section class="panel"><h2>{html.escape(title)}</h2>{body}</section>')
 
 
-def page(title: str, subtitle: str, body: str, footer: str) -> str:
+def page(title: str, subtitle: str, body: str, footer: str, tabs: str = "") -> str:
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -513,6 +612,7 @@ def page(title: str, subtitle: str, body: str, footer: str) -> str:
   <h1>{html.escape(title)}</h1>
   <p class="sub">{html.escape(subtitle)}</p>
 </header>
+{tabs}
 {body}
 <footer>{html.escape(footer)}</footer>
 </div>

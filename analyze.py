@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
+import sys
 import webbrowser
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -32,12 +33,35 @@ METRICS = [
     ("pm25", "PM2.5", " µg/m³", 0, None, ""),
     ("pm10", "PM10", " µg/m³", 0, None, ""),
 ]
+# Health bands, drawn as a green-to-red gradient along the line.
+#
+# CO2 follows the traffic-light convention used by REHVA and consumer monitors
+# (green under 800, amber to 1000, orange to 1400, red above). Note this is a
+# practical convention, not a health standard: ASHRAE explicitly does NOT set
+# an indoor CO2 limit, and the old 1000 ppm figure was removed from 62.1 for
+# being misread as one. High CO2 indicates poor ventilation rather than direct
+# harm at these levels.
+#
+# PM2.5 and PM10 use the WHO 2021 24-hour guideline and its interim targets.
+# AQI uses the US EPA category boundaries, which are already a colour scale.
+BANDS = {
+    "co2_ppm": [(800, "good"), (1000, "warning"), (1400, "serious"), (None, "critical")],
+    "pm25":    [(15, "good"), (25, "warning"), (35, "serious"), (None, "critical")],
+    "pm10":    [(45, "good"), (75, "warning"), (100, "serious"), (None, "critical")],
+    "aqi":     [(50, "good"), (100, "warning"), (150, "serious"), (None, "critical")],
+}
+
 FIELDS = [field for field, *_ in METRICS]
 # Column headers carry the unit, so a table cell never needs one.
 METRIC_COLUMNS = [(field, f"{label}{unit}".strip())
                   for field, label, unit, *_ in METRICS]
 
 LOCAL_TZ = timezone(timedelta(hours=config.LOCAL_UTC_OFFSET))
+def report_path(room: str, base: Path) -> Path:
+    """Each room's report lives in its own file beside the main one."""
+    return base.with_name(f"{base.stem}-{room}{base.suffix}")
+
+
 MAX_POINTS = 480  # beyond this an SVG line is denser than the screen can show
 # A night needs at least this much data before it is worth comparing.
 MIN_NIGHT_READINGS, MIN_NIGHT_HOURS = 20, 2.0
@@ -178,7 +202,7 @@ def build_charts(frame: pd.DataFrame, active: str) -> str:
     """The small-multiples grid, hidden while a single metric is focused."""
     charts = [
         report.line_chart(label, unit, samples_for(frame, field), places,
-                          threshold, threshold_label)
+                          threshold, threshold_label, bands=BANDS.get(field))
         for field, label, unit, places, threshold, threshold_label in plotted_metrics(frame)
     ]
     off = "" if active == "all" else " off"
@@ -191,7 +215,8 @@ def build_focus(frame: pd.DataFrame, active: str) -> str:
     for field, label, unit, places, threshold, threshold_label in plotted_metrics(frame):
         chart = report.line_chart(label, unit, samples_for(frame, field), places,
                                   threshold, threshold_label,
-                                  width=FOCUS_WIDTH, plot_h=FOCUS_PLOT_H)
+                                  width=FOCUS_WIDTH, plot_h=FOCUS_PLOT_H,
+                                  bands=BANDS.get(field))
         hidden = "" if field == active else ' style="display:none"'
         panels.append(f'<div data-metric="{field}"{hidden}>{chart}</div>')
     on = " on" if active != "all" else ""
@@ -243,6 +268,14 @@ def build_table(frame: pd.DataFrame) -> str:
     columns = [("time", "Local time")] + METRIC_COLUMNS
     return report.table(rows, columns)
 
+
+# Nights are offered as ranges rather than one entry per date: a list of
+# dates grows without limit, while these stay constant however long you run.
+NIGHT_RANGES = [
+    ("n3d", "Nights, last 3 days", pd.Timedelta(days=3)),
+    ("n1w", "Nights, last week", pd.Timedelta(days=7)),
+    ("nall", "Nights, all time", None),
+]
 
 ALLTIME_KEY = "alltime"
 ALLTIME_LABEL = "All time"
@@ -330,6 +363,35 @@ def nights(frame: pd.DataFrame, keep: int):
         if len(subset) >= MIN_NIGHT_READINGS and span >= MIN_NIGHT_HOURS:
             found.append((evening, subset))
     return found[:keep]
+
+
+def night_only(frame: pd.DataFrame, span) -> pd.DataFrame:
+    """Readings inside a night window, optionally limited to the last `span`.
+
+    Daytime rows are dropped, so the chart shows one segment per night. The
+    daytime gap is far longer than the line-bridging threshold, so the line
+    breaks between nights rather than drawing straight through the day.
+    """
+    if frame.empty:
+        return frame
+    subset = frame if span is None else rolling_window(frame, span)
+    if subset.empty:
+        return subset
+    hour = subset.index.hour
+    start, end = config.NIGHT_START_HOUR, config.NIGHT_END_HOUR
+    # A night normally wraps midnight, so the test is an OR, not an AND.
+    inside = ((hour >= start) | (hour < end)) if start > end else \
+             ((hour >= start) & (hour < end))
+    return subset.loc[inside]
+
+
+def available_night_ranges(frame: pd.DataFrame):
+    """Night ranges worth offering, given how much history exists."""
+    total = frame.index.max() - frame.index.min()
+    out = [(k, lab, span) for k, lab, span in NIGHT_RANGES
+           if span is not None and span < total]
+    out.append(NIGHT_RANGES[-1])          # all-time is always meaningful
+    return out
 
 
 def night_stats(frame: pd.DataFrame) -> dict:
@@ -495,8 +557,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--last", help="a span back from the newest reading: 30m, 6h, 2d")
     parser.add_argument("--today", action="store_true", help="since local midnight")
-    parser.add_argument("--night", nargs="?", const="", metavar="DATE",
-                        help="a night window; bare, or a YYYY-MM-DD start date")
+    parser.add_argument("--night", nargs="?", const="", metavar="RANGE",
+                        help="open on the nights view: n3d, n1w, nall")
     parser.add_argument("--from", dest="start", help="window start, local time")
     parser.add_argument("--to", dest="end", help="window end, local time")
     parser.add_argument("--every", metavar="SPAN",
@@ -517,7 +579,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--open", action="store_true", help="open in the browser when done")
     parser.add_argument("--room", help="which room to report on (default: the most recent)")
     parser.add_argument("--list-rooms", action="store_true", help="show rooms and exit")
+    parser.add_argument("--all-rooms", action="store_true",
+                        help="rebuild every room's report, not just one")
+    parser.add_argument("--no-index", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--quiet", action="store_true", help="suppress the wrote-file line")
+    argv = list(sys.argv[1:] if argv is None else argv)
     args = parser.parse_args(argv)
 
     active = METRIC_ALIASES.get(args.metric.strip().lower())
@@ -551,6 +617,13 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
         else:
             room = store.latest_room(conn)
+
+    if args.all_rooms:
+        # Render the other rooms first, so no tab links to a missing file.
+        rest = [a for a in argv if a not in ("--all-rooms", "--open")]
+        for other in names:
+            if other != room:
+                main(rest + ["--room", other, "--quiet", "--no-index"])
 
     frame = load(config.DB_PATH, room)
     if frame.empty:
@@ -607,13 +680,17 @@ def main(argv: list[str] | None = None) -> int:
         # experiment happens in. Ranges appear only once there is data to fill
         # them, so the list grows with the history instead of starting cluttered.
         offered = available_ranges(frame)
-        found_nights = nights(frame, max(1, args.days))
         labels = night_labels()
-        comparison = (report.section("Nights compared", nights_table(found_nights, labels))
-                      if len(found_nights) > 1 else "")
-
-        def night_key(evening) -> str:
-            return f"night-{evening.isoformat()}"
+        night_offered, night_windows, night_counts = [], {}, {}
+        for key, lab, span in available_night_ranges(frame):
+            scoped = frame if span is None else rolling_window(frame, span)
+            window = night_only(frame, span)
+            found = nights(scoped, 500)
+            if window.empty:
+                continue
+            night_offered.append((key, lab, span))
+            night_windows[key] = window
+            night_counts[key] = len(found)
 
         windows = {key: rolling_window(frame, span) for key, _, span in offered}
         windows[ALLTIME_KEY] = frame
@@ -630,53 +707,48 @@ def main(argv: list[str] | None = None) -> int:
             active_key = match[0]
 
         if args.night is not None:
-            if not found_nights:
+            if not night_offered:
                 print(f"no nights with enough data yet (need {MIN_NIGHT_READINGS} readings "
                       f"over {MIN_NIGHT_HOURS:g}h between {config.NIGHT_START_HOUR:02d}:00 "
                       f"and {config.NIGHT_END_HOUR:02d}:00)")
                 return 1
-            if args.night:
-                try:
-                    wanted = datetime.strptime(args.night, "%Y-%m-%d").date()
-                except ValueError:
-                    print(f"bad --night {args.night!r}; use the evening date, YYYY-MM-DD")
-                    return 1
-                match = [(e, sub) for e, sub in found_nights if e == wanted]
-                if not match:
-                    have = ", ".join(e.isoformat() for e, _ in found_nights)
-                    print(f"no night starting {wanted}. Nights available: {have}")
-                    return 1
-                evening = match[0][0]
+            keys = [k for k, _, _ in night_offered]
+            wanted = (args.night or "").strip().lower()
+            if not wanted:
+                active_key = keys[0]
+            elif wanted in keys:
+                active_key = wanted
             else:
-                evening = found_nights[0][0]
-            active_key = night_key(evening)
+                print(f"unknown --night {args.night!r}; try one of: {', '.join(keys)}")
+                return 1
 
         panes = "".join(range_pane(windows[key], key, active_key, active)
                         for key, _, _ in offered)
         panes += range_pane(frame, ALLTIME_KEY, active_key, active)
-        panes += "".join(
-            day_pane(sub, night_key(evening), active_key, active, extra=comparison)
-            for evening, sub in found_nights
-        )
+        for key, _, span in night_offered:
+            scoped = frame if span is None else rolling_window(frame, span)
+            found = nights(scoped, 500)
+            table = (report.section("Nights compared", nights_table(found, labels))
+                     if len(found) > 1 else "")
+            panes += range_pane(night_windows[key], key, active_key, active, extra=table)
 
         groups = [
             ("Range", [(key, label) for key, label, _ in offered]
                       + [(ALLTIME_KEY, ALLTIME_LABEL)]),
-            ("Nights", [(night_key(e), f"Night of {e:%a %d %b}"
-                        + (f" — {labels[e.isoformat()]}" if labels.get(e.isoformat()) else ""))
-                       for e, _ in found_nights]),
+            ("Nights", [(key, f"{lab} ({night_counts[key]})")
+                        for key, lab, _ in night_offered]),
         ]
         body = report.day_bar(
             groups, active_key,
-            meta=f"{len(found_nights)} night(s) · {len(frame)} readings") + panes
+            meta=f"{night_counts.get('nall', 0)} night(s) · {len(frame)} readings") + panes
 
         lookup = dict(windows)
-        lookup.update({night_key(e): sub for e, sub in found_nights})
+        lookup.update(night_windows)
         chosen = lookup[active_key]
         label = dict(
             [(key, lab) for key, lab, _ in offered]
             + [(ALLTIME_KEY, ALLTIME_LABEL)]
-            + [(night_key(e), f"Night of {e:%a %d %b}") for e, _ in found_nights]
+            + [(key, lab) for key, lab, _ in night_offered]
         )[active_key]
         subtitle = (f"{pane_span(chosen)} local · {len(chosen)} readings"
                     f" · {len(frame)} in total")
@@ -684,15 +756,21 @@ def main(argv: list[str] | None = None) -> int:
 
     html_text = report.page(
         title=f"air-home — {room}" if not single_window else f"air-home — {room} — {label}",
+        tabs=report.room_tabs(names, room, lambda r: report_path(r, args.output).name),
         subtitle=subtitle,
         body=body,
         footer=f"Generated {datetime.now(LOCAL_TZ).strftime('%Y-%m-%d %H:%M')} local "
                f"(UTC{config.LOCAL_UTC_OFFSET:+g}) from {config.DB_PATH.name}",
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(html_text, encoding="utf-8")
+    room_file = report_path(room, args.output)
+    room_file.write_text(html_text, encoding="utf-8")
+    # report.html stays the entry point and holds whichever room was chosen.
+    if not args.no_index:
+        args.output.write_text(html_text, encoding="utf-8")
     if not args.quiet:
-        print(f"wrote {args.output}  [{room}] {summary_line}")
+        print(f"wrote {room_file if args.no_index else args.output}"
+              f"  [{room}] {summary_line}")
 
     if args.open:
         webbrowser.open(args.output.resolve().as_uri())

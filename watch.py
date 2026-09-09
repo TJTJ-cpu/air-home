@@ -19,6 +19,7 @@ gone the moment they are not taken.
 from __future__ import annotations
 
 import argparse
+import subprocess
 import sys
 import time
 from contextlib import nullcontext
@@ -73,12 +74,23 @@ def drain(conn, room: str, deadline: float, verbose: bool = True) -> tuple[int, 
 
 
 def refresh_report(room: str) -> None:
-    """Regenerate data/report.html so it is current whenever you open it."""
-    try:
-        import analyze
+    """Regenerate data/report.html so it is current whenever you open it.
 
-        # No --all: the default view is the one with the picker.
-        analyze.main(["--room", room, "--quiet"])
+    Run as a separate process rather than by importing analyze. A watch loop
+    stays up for days; importing would freeze today's code in memory, so any
+    later edit to the report silently would not appear until the loop was
+    restarted. A subprocess always runs what is on disk. It costs about a
+    second per reading, which is nothing against a multi-minute interval.
+    """
+    try:
+        result = subprocess.run(
+            [sys.executable, str(config.ROOT / "analyze.py"), "--room", room, "--quiet"],
+            capture_output=True, text=True, timeout=180, cwd=config.ROOT,
+        )
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout).strip().splitlines()
+            print(f"    report not updated: {detail[-1] if detail else 'unknown error'}",
+                  file=sys.stderr)
     except Exception as exc:  # a report problem must never stop the loop
         print(f"    report not updated: {exc}", file=sys.stderr)
 
