@@ -3,6 +3,7 @@
 Shows you what it would remove and changes nothing, until you add --yes.
 
     python prune.py --room tj --at "2026-08-25 16:31"
+    python prune.py --room tj --everything     # wipe a whole room
     python prune.py --from "2026-08-25 16:00" --to "2026-08-25 17:00"
     python prune.py --night 2026-08-24
     python prune.py --incomplete
@@ -107,6 +108,62 @@ def reject_photo(room: str, image: str) -> str | None:
     return ", ".join(moved) or None
 
 
+def wipe_room(room: str, confirmed: bool) -> int:
+    """Remove one room entirely: its readings, its photos and its report.
+
+    Unlike the range deletions, this does not keep the photos -- "all of it"
+    means all of it -- so the preview spells out exactly what disappears and
+    nothing happens without --yes.
+    """
+    queues = config.paths_for(room)
+    photos = {name: sorted(path.glob("*")) for name, path in queues.items()
+              if name != "base" and path.is_dir()}
+    total_files = sum(len(items) for items in photos.values())
+    total_bytes = sum(f.stat().st_size for items in photos.values()
+                      for f in items if f.is_file())
+    report = config.DATA / f"report-{room}.html"
+
+    with store.connect() as conn:
+        readings = store.count(conn, room)
+        others = [r["room"] for r in store.rooms(conn) if r["room"] != room]
+
+    if not readings and not total_files and not report.exists():
+        print(f"nothing stored for room {room!r}")
+        return 0
+
+    print(f"wiping room {room!r} would remove:")
+    print()
+    print(f"  {readings:>6} reading(s) from the database")
+    for name, items in photos.items():
+        if items:
+            print(f"  {len(items):>6} file(s) in captures/{room}/{name}/")
+    print(f"  {total_bytes / 1048576:>6.1f} MB of photos in total")
+    if report.exists():
+        print(f"         {report.name}")
+    print()
+    print(f"  untouched: {', '.join(others) if others else 'no other rooms'}")
+
+    if not confirmed:
+        print()
+        print("This was a preview -- nothing was deleted.")
+        print("Add --yes to wipe this room. It cannot be undone.")
+        return 0
+
+    with store.connect() as conn:
+        conn.execute("DELETE FROM readings WHERE room = ?", (room,))
+        conn.commit()
+        store.checkpoint(conn)
+        left = store.count(conn)
+    shutil.rmtree(queues["base"], ignore_errors=True)
+    report.unlink(missing_ok=True)
+
+    print()
+    print(f"wiped room {room!r}: {readings} reading(s) and {total_files} file(s) removed")
+    print(f"{left} reading(s) remain across {len(others)} other room(s)")
+    print("run analyze.py --all-rooms to rebuild the reports")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     picker = parser.add_argument_group("what to delete (pick one)")
@@ -118,18 +175,28 @@ def main() -> int:
                         help="a whole night, by the evening it began (YYYY-MM-DD)")
     picker.add_argument("--incomplete", action="store_true",
                         help="every reading with a missing value")
+    picker.add_argument("--everything", action="store_true",
+                        help="wipe one room completely: readings, photos and report")
     parser.add_argument("--yes", action="store_true", help="actually delete (default: preview)")
     parser.add_argument("--keep-photos", action="store_true",
                         help="leave the photos in captures/processed/")
     args = parser.parse_args()
 
-    if not (args.at or args.start or args.end or args.night or args.incomplete):
+    if not (args.at or args.start or args.end or args.night
+            or args.incomplete or args.everything):
         parser.print_help()
+        return 1
+
+    if args.everything and not args.room:
+        print("--everything needs --room: say which room to wipe", file=sys.stderr)
         return 1
 
     if not config.DB_PATH.exists():
         print(f"no database at {config.DB_PATH}", file=sys.stderr)
         return 1
+
+    if args.everything:
+        return wipe_room(config.room_name(args.room), args.yes)
 
     with store.connect() as conn:
         rows = select(conn, args)

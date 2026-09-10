@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sqlite3
 import sys
 import webbrowser
@@ -60,6 +61,24 @@ LOCAL_TZ = timezone(timedelta(hours=config.LOCAL_UTC_OFFSET))
 def report_path(room: str, base: Path) -> Path:
     """Each room's report lives in its own file beside the main one."""
     return base.with_name(f"{base.stem}-{room}{base.suffix}")
+
+
+def tabs_are_stale(path: Path, rooms: list, base: Path) -> bool:
+    """Does this report's room switcher still match the rooms that exist?
+
+    Adding or removing a room leaves every other room's file listing the old
+    set, which strands you on a page with no way back. Checking is cheap --
+    the nav sits near the top -- and lets a single-room render repair the
+    others instead of silently leaving them wrong.
+    """
+    if not path.exists():
+        return True
+    if len(rooms) < 2:
+        return False        # no switcher is rendered at all, nothing to match
+    with path.open("r", encoding="utf-8") as handle:
+        head = handle.read(64_000)
+    listed = set(re.findall(r'<a href="([^"]+\.html)"', head))
+    return listed != {report_path(name, base).name for name in rooms}
 
 
 MAX_POINTS = 480  # beyond this an SVG line is denser than the screen can show
@@ -618,11 +637,17 @@ def main(argv: list[str] | None = None) -> int:
         else:
             room = store.latest_room(conn)
 
-    if args.all_rooms:
-        # Render the other rooms first, so no tab links to a missing file.
+    # Repair any other room whose switcher no longer matches the rooms that
+    # exist, so adding or wiping a room can never strand you on a dead page.
+    # --no-index marks a child render, and a child must not start its own
+    # repair pass or the two would call each other forever.
+    if not args.no_index:
         rest = [a for a in argv if a not in ("--all-rooms", "--open")]
         for other in names:
-            if other != room:
+            if other == room:
+                continue
+            if args.all_rooms or tabs_are_stale(report_path(other, args.output),
+                                                names, args.output):
                 main(rest + ["--room", other, "--quiet", "--no-index"])
 
     frame = load(config.DB_PATH, room)
