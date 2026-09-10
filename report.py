@@ -107,6 +107,17 @@ h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em
   background: var(--ink); border-color: var(--ink); color: var(--page);
 }
 .rooms a:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+.rooms.advice { border-bottom: none; padding-bottom: 0; margin-bottom: 20px; }
+.rooms .hint { font-size: 12px; color: var(--muted); }
+.rooms button {
+  font: inherit; font-size: 13px; padding: 6px 14px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--ink-2); cursor: pointer;
+}
+.rooms button:hover:not(:disabled) { color: var(--ink); }
+.rooms button:disabled { opacity: .5; cursor: progress; }
+.rooms .status { font-size: 12px; color: var(--muted); margin-left: 4px; }
+.rooms code { font-size: 12px; background: var(--grid); padding: 1px 5px; border-radius: 4px; }
 
 .daybar { display: flex; align-items: center; gap: 8px; margin: 0 0 18px; flex-wrap: wrap; }
 .daybar select {
@@ -188,6 +199,9 @@ th, td { text-align: right; padding: 5px 10px; border-bottom: 1px solid var(--gr
   white-space: nowrap; }
 th:first-child, td:first-child { text-align: left; }
 th { color: var(--muted); font-weight: 500; font-size: 12px; }
+/* A change column is context for the number beside it, not a
+   measurement of its own, so it stays quieter. */
+td.delta { color: var(--ink-2); font-size: 12px; }
 .empty { color: var(--ink-2); background: var(--surface); border: 1px solid var(--border);
   border-radius: 10px; padding: 20px; }
 footer { margin-top: 28px; color: var(--muted); font-size: 12px; }
@@ -252,6 +266,50 @@ document.querySelectorAll('.filters').forEach(function (filters) {
     });
   });
 });
+
+var advice = document.querySelector('.rooms.advice');
+if (advice) {
+  var status = advice.querySelector('.status');
+  var servable = location.protocol === 'http:' || location.protocol === 'https:';
+  advice.addEventListener('click', function (evt) {
+    var button = evt.target.closest('button[data-range]');
+    if (!button) return;
+
+    // Served, always rebuild: "last 3 days" must mean the last 3 days as of
+    // now, not as of whenever the file happened to be written. Opened from
+    // disk there is nothing to rebuild with, so an existing copy is the best
+    // answer available.
+    if (!servable) {
+      if (button.dataset.ready === '1') {
+        location.href = button.dataset.file;
+        return;
+      }
+      status.textContent = 'not made yet \u2014 run: python advise.py --room '
+        + advice.dataset.room + ' --all-ranges  (or python serve.py to do it here)';
+      return;
+    }
+
+    var buttons = advice.querySelectorAll('button[data-range]');
+    buttons.forEach(function (other) { other.disabled = true; });
+    status.textContent = 'asking the AI\u2026 this takes a moment';
+    fetch('/advise', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({room: advice.dataset.room, range: button.dataset.range})
+    }).then(function (response) {
+      return response.json().then(function (data) {
+        if (!response.ok) throw new Error(data.error || response.statusText);
+        return data;
+      });
+    }).then(function (data) {
+      status.textContent = '';
+      location.href = data.url;
+    }).catch(function (err) {
+      status.textContent = 'could not write it: ' + err.message;
+      buttons.forEach(function (other) { other.disabled = false; });
+    });
+  });
+}
 
 var daybar = document.querySelector('.daybar');
 if (daybar) {
@@ -524,6 +582,26 @@ def room_tabs(rooms: list[str], active: str, href_for) -> str:
     return f'<nav class="rooms"><span class="lead">Room</span>{links}</nav>'
 
 
+def advice_row(room: str, items: list, hint: str = "") -> str:
+    """Buttons that open a written report, generating it first if need be.
+
+    Each button knows whether its report already exists. Served over http the
+    page can ask the server to write a missing one; opened from disk it cannot,
+    so it says what to run instead. The same file works both ways.
+    """
+    if not items:
+        return ""
+    buttons = "".join(
+        f'<button type="button" data-range="{html.escape(key)}" '
+        f'data-file="{html.escape(name)}" data-ready="{"1" if ready else "0"}">'
+        f'{html.escape(label)}</button>'
+        for key, label, name, ready in items
+    )
+    return (f'<nav class="rooms advice" data-room="{html.escape(room)}" '
+            f'data-hint="{html.escape(hint)}"><span class="lead">Report</span>'
+            f'{buttons}<span class="status" role="status"></span></nav>')
+
+
 def day_bar(groups: list[tuple[str, list[tuple[str, str]]]], active: str,
             meta: str = "") -> str:
     """Older / view dropdown / newer.
@@ -575,7 +653,8 @@ def table(rows: list[dict], columns: list[tuple[str, str]]) -> str:
     body = []
     for row in rows:
         cells = "".join(
-            f"<td>{html.escape('-' if row.get(key) is None else str(row[key]))}</td>"
+            f'<td{" class=\"delta\"" if key.endswith("_delta") else ""}>'
+            f"{html.escape('-' if row.get(key) is None else str(row[key]))}</td>"
             for key, _ in columns
         )
         body.append(f"<tr>{cells}</tr>")
@@ -592,7 +671,8 @@ def section(title: str, body: str, collapsed: bool | None = None) -> str:
     return (f'<section class="panel"><h2>{html.escape(title)}</h2>{body}</section>')
 
 
-def page(title: str, subtitle: str, body: str, footer: str, tabs: str = "") -> str:
+def page(title: str, subtitle: str, body: str, footer: str,
+         tabs: str = "", extra_nav: str = "") -> str:
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -613,6 +693,7 @@ def page(title: str, subtitle: str, body: str, footer: str, tabs: str = "") -> s
   <p class="sub">{html.escape(subtitle)}</p>
 </header>
 {tabs}
+{extra_nav}
 {body}
 <footer>{html.escape(footer)}</footer>
 </div>

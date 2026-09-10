@@ -13,6 +13,9 @@ load_dotenv(ROOT / ".env")
 CAPTURES = ROOT / "captures"
 DATA = ROOT / "data"
 DB_PATH = DATA / "readings.db"
+# Generated pages and exports live together, so data/ holds only the things
+# that are yours: the database, your night notes, and backups.
+REPORTS = DATA / "reports"
 
 # Every reading belongs to a room. One database holds them all, keyed by
 # (room, captured_at), so rooms can be compared without opening several files.
@@ -80,9 +83,15 @@ VISION_MAX_WIDTH = _int("VISION_MAX_WIDTH", 1280)
 
 # Physically plausible bounds. A value outside its range is treated as a
 # misread digit and stored as NULL rather than as data.
+# Indoor temperature bounds are climate-specific: -20 C is plausible in a
+# Finnish porch and impossible in a Lao bedroom. Narrow bounds are what let a
+# misread digit be caught instead of stored, so set these to your own climate.
+TEMP_MIN_C = float(os.getenv("TEMP_MIN_C", "10"))
+TEMP_MAX_C = float(os.getenv("TEMP_MAX_C", "45"))
+
 FIELD_RANGES: dict[str, tuple[float, float]] = {
     "aqi": (0, 500),
-    "temperature_c": (-20, 60),
+    "temperature_c": (TEMP_MIN_C, TEMP_MAX_C),
     "humidity_pct": (0, 100),
     "pm25": (0, 1000),
     "pm10": (0, 1000),
@@ -95,6 +104,7 @@ FIELDS = tuple(FIELD_RANGES)
 def ensure_dirs(room: str | None = None) -> None:
     """Make the data folder, and one room's queue folders if a room is given."""
     DATA.mkdir(parents=True, exist_ok=True)
+    REPORTS.mkdir(parents=True, exist_ok=True)
     CAPTURES.mkdir(parents=True, exist_ok=True)
     if room:
         for path in paths_for(room).values():

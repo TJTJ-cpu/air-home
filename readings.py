@@ -65,7 +65,7 @@ def main() -> int:
     parser.add_argument("--rooms", action="store_true", help="list rooms and exit")
     parser.add_argument("--limit", type=int, default=20, help="how many to show (default 20)")
     parser.add_argument("--all", action="store_true", help="show everything")
-    parser.add_argument("--csv", nargs="?", const=config.DATA / "readings.csv",
+    parser.add_argument("--csv", nargs="?", const=config.REPORTS / "readings.csv",
                         type=Path, help="export all readings to CSV")
     args = parser.parse_args()
 

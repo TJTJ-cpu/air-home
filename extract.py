@@ -30,6 +30,9 @@ and CO2 in ppm.
 Rules:
 - The digits are a seven-segment LCD font and are zero-padded. "002" is 2, \
 "0454" is 454, "005" is 5. Strip the leading zeros.
+- Count the digits before reading them. A seven-segment "1" is a narrow bar
+with space either side and is easy to miss, which would turn 31 into 3 or 12
+into 2. Temperature and humidity are normally two digits.
 - Report only what is legibly printed. If glare, blur or an obstruction makes \
 a value uncertain, return null for that field. A null is correct; a guess is \
 a corrupted measurement.
@@ -133,6 +136,33 @@ def _call(client: OpenAI, messages: list[dict], use_schema: bool) -> str:
     return response.choices[0].message.content or ""
 
 
+def ask(system: str, user: str, schema: dict | None = None,
+        max_tokens: int = 1200) -> dict | str:
+    """Ask the local model a text question. Returns parsed JSON if a schema is given.
+
+    Used for the written advice. Note what is NOT sent: raw readings. Every
+    number is computed in Python and handed over already summarised, so the
+    model interprets arithmetic it cannot get wrong.
+    """
+    client = _client()
+    kwargs = {}
+    if schema:
+        kwargs["response_format"] = {"type": "json_schema", "json_schema": schema}
+    try:
+        response = client.chat.completions.create(
+            model=config.LMSTUDIO_MODEL,
+            messages=[{"role": "system", "content": system},
+                      {"role": "user", "content": user}],
+            temperature=0.3, max_tokens=max_tokens, **kwargs)
+    except Exception as exc:
+        raise ExtractionError(
+            f"LM Studio call failed ({exc}). Is the server running at "
+            f"{config.LMSTUDIO_BASE_URL} with {config.LMSTUDIO_MODEL} loaded?",
+            transient=True) from exc
+    text = response.choices[0].message.content or ""
+    return _parse_json(text) if schema else text.strip()
+
+
 def validate(raw: dict) -> tuple[dict, list[str]]:
     """Coerce the model's dict into typed fields, nulling implausible values.
 
@@ -159,8 +189,24 @@ def validate(raw: dict) -> tuple[dict, list[str]]:
     return cleaned, notes
 
 
-def extract(path: Path) -> tuple[dict, list[str]]:
-    """Run the model over one image. Raises ExtractionError if it cannot."""
+def extract(path: Path, retry_implausible: bool = True) -> tuple[dict, list[str]]:
+    """Run the model over one image. Raises ExtractionError if it cannot.
+
+    If a value comes back outside its plausible range, the model is asked once
+    more. That kind of miss is usually a slip on a single glyph -- a dropped
+    "1" turning 31 into 3 -- rather than a photo that genuinely cannot be read,
+    and a second look often lands it. The cleaner answer wins; if the retry is
+    no better, the implausible value is discarded exactly as before.
+    """
+    reading, notes = _extract_once(path)
+    if notes and retry_implausible:
+        second, second_notes = _extract_once(path)
+        if len(second_notes) < len(notes):
+            return second, second_notes
+    return reading, notes
+
+
+def _extract_once(path: Path) -> tuple[dict, list[str]]:
     client = _client()
     try:
         messages = _messages(encode_image(path))

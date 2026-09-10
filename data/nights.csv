@@ -1,3 +1,0 @@
-night,label,readings,hours,co2_start,co2_peak,co2_peak_at,co2_mean,co2_rise_per_hour,hours_above_1000,temp_min,temp_max,humidity_mean
-2026-08-23,,260,12.95,501.0,1496.0,06:09,1038.4,98.0,7.73,26.0,28.0,64.2
-2026-08-24,,260,12.97,561.0,1064.0,05:55,848.7,51.1,2.45,26.0,28.0,69.4

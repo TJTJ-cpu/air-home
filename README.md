@@ -171,6 +171,33 @@ break the chart into pieces. A long gap, like the camera being off for hours,
 still leaves a break, because a straight line across that would be showing you
 data that was never measured.
 
+### A written report you can save as PDF
+
+    python advise.py --all-ranges       # last 3 days, 5 days and a week
+    python advise.py --last 3d --open
+
+This writes a short plain-English report: how the air has been, how you slept,
+what is going well, and what to change. Open it and press **Save as PDF** — the
+browser's own print dialog does the rest, so there is nothing extra to install.
+
+**To make them from the page itself**, start the little local server:
+
+    python serve.py
+
+It opens `http://localhost:8000/report-<room>.html`, and the **Report** buttons
+at the top now work: click *Last 3 days* and it asks the AI and opens the result
+(about 30 seconds). Nothing is exposed to the network — it listens on this
+machine only.
+
+Opened straight from disk instead, those buttons can only open reports that
+already exist. A `file://` page has no server behind it, so it cannot run Python
+or reach the AI; it will tell you the command to run.
+
+**Every number is worked out in Python before the AI sees anything.** The model
+is handed a finished summary and asked only to interpret it, so it cannot get a
+figure wrong. If LM Studio is closed, the report is still written — with the
+tables, and a note where the commentary would be.
+
 ### Comparing nights
 
 The dropdown also has a **Nights** section, with the same shape as the ranges:
@@ -203,21 +230,25 @@ dropdown and the comparison table. Leave it blank and nothing is shown.
 
 For working with the numbers yourself:
 
-    python analyze.py --export-nights      # data/nights.csv, one row per night
+    python analyze.py --export-nights      # data/reports/nights.csv
 
 Change the hours with `NIGHT_START_HOUR` and `NIGHT_END_HOUR` in `.env`.
 
 If you'd rather just see numbers in the terminal:
 
     python readings.py            # the 20 most recent
-    python readings.py --csv      # save as a spreadsheet file
+    python readings.py --csv      # data/reports/readings.csv
 
 ## Where everything lives
+
+`data/` holds what is yours; `data/reports/` holds what the program made.
 
 | Where | What |
 |---|---|
 | `data/readings.db` | All your readings, every room. This is the important one. |
-| `data/report.html` | The web page. Rebuilt automatically, safe to delete. |
+| `data/night_labels.json` | Your notes on what you changed each night |
+| `data/backup/` | Database backups |
+| `data/reports/` | Every generated page and export — safe to delete, all rebuildable |
 | `captures/<room>/pending/` | Photos waiting to be read |
 | `captures/<room>/processed/` | Photos that have been read |
 | `captures/<room>/failed/` | Photos the AI couldn't make sense of |
@@ -267,6 +298,9 @@ waiting, across every room, faster than the loop manages.
 | `store.py` | Saves readings to the database |
 | `analyze.py` | Builds the report |
 | `report.py` | Draws the charts |
+| `advise.py` | Writes the plain-English report you can save as PDF |
+| `serve.py` | Serves the reports so their buttons work |
+| `recheck.py` | Re-reads photos behind readings that look wrong |
 | `readings.py` | Shows readings in the terminal |
 | `rebuild.py` | Rebuilds the database from photo files |
 | `config.py` | Settings |

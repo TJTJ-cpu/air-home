@@ -15,10 +15,8 @@ data/readings.db-wal
 data/readings.db-shm
 data/process.lock
 
-# Derived. Regenerate any time with analyze.py / readings.py --csv.
-data/report.html
-data/readings.csv
-data/nights.csv
+# Derived. Regenerate any time with analyze.py / advise.py / readings.py --csv.
+data/reports/
 
 # Tracked deliberately: data/night_labels.json is your own notes on what each
 # night's experiment changed, not something the program can regenerate.

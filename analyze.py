@@ -58,6 +58,17 @@ METRIC_COLUMNS = [(field, f"{label}{unit}".strip())
                   for field, label, unit, *_ in METRICS]
 
 LOCAL_TZ = timezone(timedelta(hours=config.LOCAL_UTC_OFFSET))
+def advice_nav(room: str, base: Path) -> str:
+    """The Report row: one button per range, marked as ready or not."""
+    labels = [("3d", "Last 3 days"), ("5d", "Last 5 days"), ("1w", "Last week")]
+    items = []
+    for key, label in labels:
+        path = base.with_name(f"advice-{room}-{key}.html")
+        items.append((key, label, path.name, path.exists()))
+    return report.advice_row(room, items,
+                             hint=f"python advise.py --room {room} --all-ranges")
+
+
 def report_path(room: str, base: Path) -> Path:
     """Each room's report lives in its own file beside the main one."""
     return base.with_name(f"{base.stem}-{room}{base.suffix}")
@@ -263,6 +274,58 @@ def summary_table(frame: pd.DataFrame) -> str:
     return report.table(rows, columns)
 
 
+def rolling_hours_table(frame: pd.DataFrame, limit: int = 48) -> str:
+    """Hour by hour, newest first: a rolling top row, clock hours beneath.
+
+    The first row is the last 60 minutes, which is what you want when you glance
+    at the page -- a clock-aligned bucket two minutes past the hour would hold
+    two minutes of data. Everything below it is a plain clock hour, which is
+    easier to read down and to compare against another day.
+    """
+    anchor, earliest = frame.index.max(), frame.index.min()
+    rows = []
+
+    recent = frame.loc[frame.index > anchor - pd.Timedelta(hours=1)]
+    if not recent.empty:
+        rows.append(_hour_row("Last 60 min", recent))
+
+    hour = anchor.floor("h")
+    for _ in range(limit):
+        chunk = frame.loc[(frame.index >= hour) & (frame.index < hour + pd.Timedelta(hours=1))]
+        if not chunk.empty:
+            rows.append(_hour_row(f"{hour:%H:%M}", chunk))
+        hour -= pd.Timedelta(hours=1)
+        if hour + pd.Timedelta(hours=1) <= earliest:
+            break
+
+    # How CO2 moved from the hour below to this one. The rolling top row is
+    # left blank: it overlaps the clock hour beneath it, so the difference
+    # between them would be an artefact of the overlap, not a real change.
+    for index, row in enumerate(rows):
+        below = rows[index + 1] if index + 1 < len(rows) else None
+        here, prior = row.pop("_co2"), (below or {}).get("_co2")
+        skip = index == 0 and row["bucket"] == "Last 60 min"
+        if here is None or prior is None or skip:
+            row["co2_delta"] = "-"
+        else:
+            row["co2_delta"] = f"{here - prior:+.0f}"
+    for row in rows:
+        row.pop("_co2", None)
+
+    columns = ([("bucket", "Hour"), ("n", "Readings"), METRIC_COLUMNS[0],
+                ("co2_delta", "Change")] + METRIC_COLUMNS[1:])
+    return report.table(rows, columns)
+
+
+def _hour_row(label: str, chunk: pd.DataFrame) -> dict:
+    row = {"bucket": label, "n": len(chunk)}
+    for field, _, _, places, *_ in METRICS:
+        row[field] = fmt(chunk[field].mean(), places) if field in chunk else "-"
+    mean = chunk["co2_ppm"].mean() if "co2_ppm" in chunk else None
+    row["_co2"] = None if mean is None or pd.isna(mean) else float(mean)
+    return row
+
+
 def averages_table(frame: pd.DataFrame, rule, label_format: str) -> str:
     means, counts = bucket(frame, rule)
     rows = []
@@ -334,9 +397,8 @@ def day_pane(frame: pd.DataFrame, value: str, active: str, metric: str,
                                  averages_table(frame, pd.Timedelta(days=1), "%a %d %b"),
                                  collapsed=False)
     else:
-        summary = report.section("Averages by hour",
-                                 averages_table(frame, pd.Timedelta(hours=1), "%H:00"),
-                                 collapsed=False)
+        summary = report.section("Hour by hour, newest first",
+                                 rolling_hours_table(frame), collapsed=False)
     shown = frame if table_limit is None else frame.iloc[-table_limit:]
     title = (f"All {len(frame)} readings" if table_limit is None or len(frame) <= table_limit
              else f"Most recent {len(shown)} of {len(frame)} readings")
@@ -592,9 +654,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="open focused on one metric: co2, temp, humidity, "
                              "aqi, pm25, pm10")
     parser.add_argument("--export-nights", type=Path, metavar="PATH", nargs="?",
-                        const=config.DATA / "nights.csv",
+                        const=config.REPORTS / "nights.csv",
                         help="write the night comparison to CSV and exit")
-    parser.add_argument("--output", type=Path, default=config.DATA / "report.html")
+    parser.add_argument("--output", type=Path, default=config.REPORTS / "report.html")
     parser.add_argument("--open", action="store_true", help="open in the browser when done")
     parser.add_argument("--room", help="which room to report on (default: the most recent)")
     parser.add_argument("--list-rooms", action="store_true", help="show rooms and exit")
@@ -782,6 +844,7 @@ def main(argv: list[str] | None = None) -> int:
     html_text = report.page(
         title=f"air-home — {room}" if not single_window else f"air-home — {room} — {label}",
         tabs=report.room_tabs(names, room, lambda r: report_path(r, args.output).name),
+        extra_nav=advice_nav(room, args.output),
         subtitle=subtitle,
         body=body,
         footer=f"Generated {datetime.now(LOCAL_TZ).strftime('%Y-%m-%d %H:%M')} local "
