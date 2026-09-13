@@ -82,6 +82,69 @@ Want a different gap between photos?
 Five minutes is a sensible default. Every minute gives you more detail, but
 uses a lot more disk space and a lot more of your GPU.
 
+**The photo just taken is always read first.** If a backlog has built up, the
+new one still jumps the queue — it is the only photo describing the room right
+now, so it decides whether to speed up and it is what the report shows as
+current. Older photos are then worked through oldest-first with whatever time
+is left in the cycle, and they yield entirely when sampling speeds up: keeping
+up with the present matters more than catching up on the past.
+
+**It speeds up on its own when there's something to see.** Rather than one
+fixed gap, it picks between three, and the fastest one that applies wins:
+
+| | how often | when |
+|---|---|---|
+| Normal | your interval | nothing much happening |
+| CO₂ is high | every 2 minutes | the last reading was above 800 ppm |
+| Something is changing | every minute | a reading jumped, in the last 10 minutes |
+
+The middle one is about a **level**, not a change. A room sitting flat at 1044
+never jumps — it just stays bad — and that is exactly the part of the night you
+want detail on, so a high number alone is enough to make it look more often. It
+keeps that up for as long as CO₂ stays high.
+
+The last one is about a **change**. If a reading jumps sharply from the one
+before — you switch on a fan, open a door, start cooking — it drops to a photo
+a minute for the next ten minutes, so the shape of the change is captured
+instead of showing up as one step. Each new jump extends that window.
+
+When the window runs out it doesn't go straight back to normal, it goes back to
+whichever rule still applies — so a fan that clears the room ends at your normal
+interval, while one that doesn't leaves it at 2 minutes. It says so when the gap
+changes:
+
+    now every 120s -- co2 1039, above 800
+
+None of this ever makes it slower than you asked. If you run `--interval 1m`,
+it stays at a minute throughout.
+
+What counts as a jump, between one reading and the next:
+
+| | triggers at |
+|---|---|
+| CO₂ | 50 ppm |
+| Temperature | 2 °C |
+| PM2.5 | 10 µg/m³ |
+| PM10 | 12 µg/m³ |
+
+Those are the 99th percentile of changes actually seen in the data, so they fire
+on roughly 1% of readings — real events, not sensor jitter.
+
+Humidity and AQI deliberately never trigger. AQI is calculated from PM2.5, so it
+would count the same event twice. Humidity follows the weather outside rather
+than anything happening in the room — overnight it barely differs from daytime
+while CO₂ nearly doubles — so it is worth recording but not worth reacting to.
+
+The thresholds, the 800 ppm line and both faster gaps all live in `config.py`
+(`JUMP_THRESHOLDS`, `HIGH_CO2_PPM`, `HIGH_INTERVAL_SECONDS`,
+`FAST_INTERVAL_SECONDS`). Change them if your room behaves differently, or turn
+the whole thing off:
+
+    python watch.py grandpa --no-adaptive
+
+This only works in `watch.py`, which reads each photo as it goes. `capture.py`
+never looks at the numbers, so it cannot know when something changed.
+
 ## Rooms
 
 One monitor and one webcam can cover several rooms — you just move them, and

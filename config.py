@@ -101,6 +101,45 @@ FIELD_RANGES: dict[str, tuple[float, float]] = {
 FIELDS = tuple(FIELD_RANGES)
 
 
+# Adaptive sampling. When a reading jumps by more than this from the one
+# before, something actually happened -- a door opened, a fan came on -- and
+# the next few minutes are worth sampling closely.
+#
+# The numbers come from the 99th percentile of changes actually observed
+# between consecutive 3-minute readings, so they fire on about 1% of them.
+#
+# Two channels are deliberately absent:
+#
+# AQI is computed from PM2.5 and moves in lockstep with it, so including it
+# would count the same event twice.
+#
+# Humidity does not signal the events this is for. Measured across 7,900
+# readings it barely differs between night and day (64% vs 65%) while CO2
+# nearly doubles (770 vs 479), and its correlation with CO2 overnight is
+# +0.03 -- no relationship at all. It follows the weather outside, not the
+# door being opened, so it would fire on things that are not events and stay
+# silent for things that are.
+JUMP_THRESHOLDS: dict[str, float] = {
+    "co2_ppm": 50,        # normal step is 6; a door opening shows 100+
+    "temperature_c": 2,   # the device reports whole degrees, so 2 is a real move
+    "pm25": 10,
+    "pm10": 12,
+}
+
+# While something is changing, sample every minute instead, and keep doing so
+# until it has been quiet for this long. Ten minutes covers the shape of a
+# room clearing out; each new jump extends it.
+FAST_INTERVAL_SECONDS = 60
+FAST_WINDOW_SECONDS = 600
+
+# Sitting above this, the room is worth watching more closely even when the
+# number is steady -- a flat 1044 is the part of the night you most want
+# detail on. This is a level, not a change: it holds for as long as CO2 stays
+# up, where the jump rule above times out after ten quiet minutes.
+HIGH_CO2_PPM = 800
+HIGH_INTERVAL_SECONDS = 120
+
+
 def ensure_dirs(room: str | None = None) -> None:
     """Make the data folder, and one room's queue folders if a room is given."""
     DATA.mkdir(parents=True, exist_ok=True)

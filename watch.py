@@ -10,6 +10,13 @@ so there is one command to run instead of three.
 The room decides where photos queue and which room the readings are filed
 under, so one machine can cover several rooms as the camera moves.
 
+The gap between photos is not fixed. Three rules apply and the fastest wins:
+the interval you asked for; every two minutes while CO2 simply sits high, which
+is a level rather than a change and holds for as long as it stays up; and every
+minute for ten minutes after a reading jumps, which is how a fan switching on or
+a door opening gets captured as a shape instead of one step. None of them ever
+slows a fast interval down. Use --no-adaptive to keep the gap fixed.
+
 The photo is always written to disk BEFORE the model is asked to read it. If
 LM Studio is down or slow, the capture still happened: the photo waits in
 captures/pending/ and is picked up automatically on a later pass. A model
@@ -23,7 +30,9 @@ import subprocess
 import sys
 import time
 from contextlib import nullcontext
-from datetime import datetime
+from datetime import datetime, timezone
+
+from pathlib import Path
 
 import capture
 import config
@@ -36,41 +45,143 @@ from extract import ExtractionError
 RESERVE_SECONDS = 25
 
 
-def drain(conn, room: str, deadline: float, verbose: bool = True) -> tuple[int, int, bool]:
-    """Read pending photos until the queue empties or time runs short.
-
-    Normally there is exactly one waiting photo -- the one just taken. After an
-    outage there is a backlog, and this works through it a few per cycle
-    without ever pushing the next capture late.
-
-    Returns (read, failed, model_down).
-    """
-    read = failed = 0
-    pending = config.paths_for(room)["pending"]
-    for image in process.pending_images(pending):
-        if time.monotonic() > deadline - RESERVE_SECONDS:
-            remaining = len(process.pending_images(pending))
-            if verbose and remaining:
-                print(f"    {remaining} photo(s) still queued, continuing next cycle", flush=True)
-            break
-        try:
-            status, message = process.process_one(conn, room, image)
-        except ExtractionError as exc:
-            # The model is unreachable. Stop trying this cycle and leave every
-            # photo where it is; the next cycle picks them all up.
-            if verbose:
-                print(f"    model unavailable: {exc}", file=sys.stderr)
-            return read, failed, True
-
+def _read(conn, room: str, image: Path, announce: bool) -> tuple[str, str]:
+    """Read one photo. Returns (outcome, message); outcome "down" means the
+    model is unreachable and nothing further should be attempted this cycle."""
+    try:
+        status, message = process.process_one(conn, room, image)
+    except ExtractionError as exc:
+        print(f"    model unavailable: {exc}", file=sys.stderr)
+        return "down", str(exc)
+    if announce:
         if status in ("failed", "unreadable"):
-            failed += 1
-            if verbose:
-                print(f"    {image.name}  {status.upper()}: {message}", flush=True)
+            print(f"    {image.name}  {status.upper()}: {message}", flush=True)
         else:
-            read += 1
-            if verbose:
-                print(f"    {message}", flush=True)
-    return read, failed, False
+            print(f"    {message}", flush=True)
+    return status, message
+
+
+def read_live(conn, room: str, image: Path | None) -> tuple[bool, bool]:
+    """Read the photo just taken, before anything else.
+
+    It is the only one describing the room right now: it decides whether to
+    speed sampling up, and it is what the report shows as current. Behind a
+    backlog of fifty photos, reading in filename order would answer both
+    questions with a picture from hours ago -- by which time a fan switching
+    on is long over.
+
+    Returns (stored_something, model_down).
+    """
+    if image is None or not image.exists():
+        return False, False
+    status, _ = _read(conn, room, image, announce=True)
+    if status == "down":
+        return False, True
+    return status not in ("failed", "unreadable"), False
+
+
+def drain_backlog(conn, room: str, deadline: float, skip: Path | None = None) -> bool:
+    """Work through older photos, oldest first, until the cycle runs short.
+
+    History fills in forwards, and never at the cost of a late capture: the
+    deadline is whatever time is left in the current interval, which shrinks
+    when sampling speeds up.
+
+    Returns True if the model went away.
+    """
+    pending = config.paths_for(room)["pending"]
+    done = 0
+    for image in process.pending_images(pending):
+        if image == skip:
+            continue
+        if time.monotonic() > deadline:
+            break
+        status, _ = _read(conn, room, image, announce=False)
+        if status == "down":
+            return True
+        done += 1
+
+    if done:
+        left = len([p for p in process.pending_images(pending) if p != skip])
+        tail = f", {left} still queued" if left else ", queue clear"
+        print(f"    caught up on {done} older photo(s){tail}", flush=True)
+    return False
+
+
+def latest_co2(conn, room: str, interval: float) -> float | None:
+    """The most recent CO2 reading, if it is recent enough to still describe now.
+
+    Skips over readings whose CO2 could not be read, so one unreadable photo
+    does not look like the room suddenly clearing. A value older than a few
+    intervals is ignored: after an outage it describes a room that has since
+    moved on.
+    """
+    row = conn.execute(
+        "SELECT captured_at, co2_ppm FROM readings "
+        "WHERE room = ? AND co2_ppm IS NOT NULL ORDER BY captured_at DESC LIMIT 1",
+        (room,)).fetchone()
+    if row is None:
+        return None
+    age = (datetime.now(timezone.utc)
+           - datetime.fromisoformat(row["captured_at"])).total_seconds()
+    if age > max(interval, 60) * 4:
+        return None
+    return float(row["co2_ppm"])
+
+
+def sampling_gap(conn, room: str, args, fast_until: float,
+                 jump_reason: str) -> tuple[float, str]:
+    """How long to wait before the next photo, and why.
+
+    Three states, fastest wins: normal, CO2 sitting high, and something
+    actively changing. Both of the quicker ones are capped by whatever
+    interval was asked for -- this never slows a fast interval down.
+    """
+    gap, why = args.interval, "normal"
+    if args.no_adaptive:
+        return gap, why
+
+    level = latest_co2(conn, room, args.interval)
+    if (level is not None and level > config.HIGH_CO2_PPM
+            and config.HIGH_INTERVAL_SECONDS < gap):
+        gap = config.HIGH_INTERVAL_SECONDS
+        why = f"co2 {level:.0f}, above {config.HIGH_CO2_PPM}"
+
+    if time.monotonic() < fast_until and config.FAST_INTERVAL_SECONDS < gap:
+        gap = config.FAST_INTERVAL_SECONDS
+        why = jump_reason or "still changing"
+
+    return gap, why
+
+
+def recent_jump(conn, room: str, interval: float) -> str | None:
+    """Did the newest reading move sharply from the one before it?
+
+    Compares the last two stored readings rather than tracking state in the
+    loop, so a backlog being worked through is judged on the same basis as a
+    live capture. Readings far apart in time are ignored: a gap across an
+    outage is not a change, it is a gap.
+    """
+    rows = conn.execute(
+        "SELECT * FROM readings WHERE room = ? ORDER BY captured_at DESC LIMIT 2",
+        (room,)).fetchall()
+    if len(rows) < 2:
+        return None
+    newest, prior = rows
+    apart = (datetime.fromisoformat(newest["captured_at"])
+             - datetime.fromisoformat(prior["captured_at"])).total_seconds()
+    if apart <= 0 or apart > max(interval, 60) * 2.5:
+        return None
+
+    for field, threshold in config.JUMP_THRESHOLDS.items():
+        now, before = newest[field], prior[field]
+        if now is None or before is None:
+            continue
+        move = float(now) - float(before)
+        if abs(move) >= threshold:
+            return f"{field.replace('_ppm', '').replace('_c', '').replace('_pct', '')} " \
+                   f"{move:+.0f}"
+    return None
 
 
 def refresh_report(room: str) -> None:
@@ -105,6 +216,9 @@ def main() -> int:
     parser.add_argument("--warmup", type=int, default=config.CAMERA_WARMUP_FRAMES)
     parser.add_argument("--no-report", action="store_true",
                         help="skip regenerating data/report.html each cycle")
+    parser.add_argument("--no-adaptive", action="store_true",
+                        help="keep the interval fixed: never speed up for a "
+                             "jump or for high CO2")
     args = parser.parse_args()
 
     try:
@@ -126,14 +240,21 @@ def main() -> int:
 
     taken = read_total = failed_total = 0
     model_down = False
+    fast_until = 0.0          # monotonic deadline; 0 means sampling normally
+    jump_reason = ""
+    last_gap = None
     started = time.monotonic()
+    if not args.no_adaptive:
+        print(f"sampling drops to {config.HIGH_INTERVAL_SECONDS}s above "
+              f"{config.HIGH_CO2_PPM} ppm, and to "
+              f"{config.FAST_INTERVAL_SECONDS}s while readings are moving", flush=True)
 
     try:
         with store.connect() as conn:
             while limit is None or taken < limit:
                 cycle_start = time.monotonic()
-                deadline = cycle_start + args.interval
 
+                path = None
                 try:
                     path = capture.capture_one(pending, args.camera, args.warmup)
                     taken += 1
@@ -142,28 +263,46 @@ def main() -> int:
                 except Exception as exc:  # a camera glitch must not end the run
                     print(f"capture failed: {exc}", file=sys.stderr)
 
-                read, failed, down = drain(conn, room, deadline)
-                read_total += read
-                failed_total += failed
+                stored, down = read_live(conn, room, path)
+                if stored:
+                    read_total += 1
+                    # Keep readings.db itself current so a copy or a commit is
+                    # never missing the last few hours.
+                    store.checkpoint(conn)
+                    if not args.no_adaptive:
+                        moved = recent_jump(conn, room, args.interval)
+                        if moved:
+                            fast_until = time.monotonic() + config.FAST_WINDOW_SECONDS
+                            jump_reason = moved
+                elif path is not None and not down:
+                    failed_total += 1
+
+                # Decided now, after the live reading, so a change just seen
+                # shortens this cycle rather than the next one -- and the
+                # backlog only gets whatever time is left inside it.
+                gap, why = sampling_gap(conn, room, args, fast_until, jump_reason)
+                if time.monotonic() >= fast_until:
+                    fast_until, jump_reason = 0.0, ""
+                if gap != last_gap:
+                    if last_gap is not None:
+                        print(f"    now every {gap:g}s -- {why}", flush=True)
+                    last_gap = gap
+
+                if not down:
+                    down = drain_backlog(conn, room,
+                                         cycle_start + gap - RESERVE_SECONDS, skip=path)
 
                 if down and not model_down:
                     print("    photos are still being captured and will be read "
                           "once LM Studio is back", file=sys.stderr)
                 model_down = down
 
-                if read:
-                    # Keep readings.db itself current so a copy or a commit is
-                    # never missing the last few hours.
-                    store.checkpoint(conn)
-                    if not args.no_report:
-                        refresh_report(room)
+                if stored and not args.no_report:
+                    refresh_report(room)
 
                 if limit is not None and taken >= limit:
                     break
-                # Anchor to the start so the schedule cannot drift by however
-                # long the capture and reading took.
-                elapsed = time.monotonic() - started
-                time.sleep(max(0.0, args.interval - (elapsed % args.interval)))
+                time.sleep(max(0.0, cycle_start + gap - time.monotonic()))
     except KeyboardInterrupt:
         print()
 

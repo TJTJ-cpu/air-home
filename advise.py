@@ -101,7 +101,10 @@ def facts(frame: pd.DataFrame, room: str, label: str) -> dict:
     co2 = frame["co2_ppm"].dropna()
     out = {
         "room": room, "period": label, "readings": len(frame),
-        "hours_covered": round(span_hours, 1), "nights": per_night,
+        "hours_covered": round(span_hours, 1),
+        "covers_from": frame.index.min().strftime("%d %b %H:%M"),
+        "covers_to": frame.index.max().strftime("%d %b %H:%M"),
+        "nights": per_night,
         "co2": {
             "mean": round(float(co2.mean()), 0) if len(co2) else None,
             "peak": round(float(co2.max()), 0) if len(co2) else None,
@@ -170,6 +173,12 @@ body { margin:0; background:var(--paper); color:var(--ink);
   gap:1rem; border-bottom:2px solid var(--ink); padding-bottom:1rem; }
 h1 { font-size:1.6rem; margin:.2rem 0 .3rem; letter-spacing:-.02em; }
 .meta { color:var(--muted); font-size:.85rem; }
+.stamp {
+  display:inline-block; margin-top:.5rem; padding:.25rem .6rem; border-radius:6px;
+  background:var(--wash); border:1px solid var(--rule);
+  font-size:.8rem; color:var(--ink-2); font-variant-numeric:tabular-nums;
+}
+.stamp b { color:var(--ink); font-weight:600; }
 .eyebrow { font-size:.7rem; letter-spacing:.12em; text-transform:uppercase;
   color:var(--muted); font-weight:600; }
 button { font:inherit; font-size:.85rem; padding:.5rem 1rem; border-radius:8px;
@@ -226,6 +235,10 @@ def row_class(value, warn, bad) -> str:
 
 def render(summary: dict, advice: dict | None, error: str | None) -> str:
     e = html.escape
+    # Printed at the top as well as the footer: a PDF outlives the moment it
+    # was made, and its age is the first thing you need to know when you find
+    # it again later.
+    written = f"{datetime.now(LOCAL_TZ):%d %b %Y at %H:%M}"
     nights = summary["nights"]
     rows = []
     for n in nights:
@@ -306,6 +319,9 @@ def render(summary: dict, advice: dict | None, error: str | None) -> str:
       <h1>{e(summary['period'])}</h1>
       <div class="meta">{summary['readings']} readings over
         {summary['hours_covered']:.0f} hours &middot; {len(nights)} full night(s)</div>
+      <div class="meta">Covering {e(summary['covers_from'])} &rarr;
+        {e(summary['covers_to'])}</div>
+      <div class="stamp">Written <b>{written}</b></div>
     </div>
     <button class="noprint" onclick="window.print()">Save as PDF</button>
   </div>
@@ -315,8 +331,8 @@ def render(summary: dict, advice: dict | None, error: str | None) -> str:
   <h2>The numbers</h2>
   {numbers}
   <footer>
-    Generated {datetime.now(LOCAL_TZ):%d %b %Y %H:%M} local from
-    {summary['readings']} readings taken by air-home.
+    Written {written} local time, from {summary['readings']} readings taken by
+    air-home between {e(summary['covers_from'])} and {e(summary['covers_to'])}.
     Every figure above was calculated from the measurements; the written
     sections are an interpretation of those figures by a local language model
     and should be read as suggestions, not medical advice.

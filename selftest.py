@@ -8,12 +8,14 @@ model. Your database and captures are never opened.
 from __future__ import annotations
 
 import contextlib
+import time
 import io
 import pathlib
 import shutil
 import sys
 import tempfile
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import config
 
@@ -30,6 +32,7 @@ assert config.DB_PATH != REAL_DB, "sandbox not applied -- refusing to run"
 import analyze  # noqa: E402
 import process  # noqa: E402
 import rebuild  # noqa: E402
+import watch  # noqa: E402
 import store  # noqa: E402
 from capture import parse_interval  # noqa: E402
 from extract import ExtractionError, validate  # noqa: E402
@@ -130,6 +133,58 @@ def main() -> int:
     check("per-room files written",
           (config.DATA / "report-study.html").exists())
     check("night group in picker", "Nights," in html)
+
+    print("\nadaptive sampling")
+    base = {"aqi": 2, "temperature_c": 27.0, "humidity_pct": 60,
+            "pm25": 2, "pm10": 3, "co2_ppm": 700}
+
+    def jump(second, apart=180):
+        """Store two readings for a scratch room, ask if it counts as a jump."""
+        with store.connect() as conn:
+            t0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+            store.save(conn, "probe", t0.isoformat(timespec="seconds"), "a.jpg", base, [])
+            store.save(conn, "probe",
+                       (t0 + timedelta(seconds=apart)).isoformat(timespec="seconds"),
+                       "b.jpg", {**base, **second}, [])
+            conn.commit()
+            found = watch.recent_jump(conn, "probe", 180)
+            conn.execute("DELETE FROM readings WHERE room = 'probe'")
+            conn.commit()
+        return found
+
+    check("a fan dropping CO2 triggers", bool(jump({"co2_ppm": 580})))
+    check("a 2C drop triggers", bool(jump({"temperature_c": 25.0})))
+    check("ordinary drift does not", not jump({"co2_ppm": 706}))
+    check("humidity never triggers -- it follows the weather, not the room",
+          not jump({"humidity_pct": 79}))
+    check("AQI alone does not (it is derived from PM2.5)", not jump({"aqi": 40}))
+    check("a gap across an outage is not a change",
+          not jump({"co2_ppm": 400}, apart=7200))
+
+    def gap(co2, interval=180, fast=False, age=0):
+        """Store one recent reading, ask how long to wait after it."""
+        args = SimpleNamespace(interval=interval, no_adaptive=False)
+        with store.connect() as conn:
+            stamp = datetime.now(timezone.utc) - timedelta(seconds=age)
+            store.save(conn, "probe", stamp.isoformat(timespec="seconds"),
+                       "a.jpg", {**base, "co2_ppm": co2}, [])
+            conn.commit()
+            until = time.monotonic() + 60 if fast else 0.0
+            seconds, _why = watch.sampling_gap(conn, "probe", args, until, "test")
+            conn.execute("DELETE FROM readings WHERE room = 'probe'")
+            conn.commit()
+        return seconds
+
+    check("clean air waits the full interval", gap(600) == 180)
+    check("CO2 above 800 drops to 120s even when steady",
+          gap(1044) == config.HIGH_INTERVAL_SECONDS)
+    check("exactly 800 is not above it", gap(800) == 180)
+    check("something changing beats a high level",
+          gap(1044, fast=True) == config.FAST_INTERVAL_SECONDS)
+    check("a stale reading does not hold the fast rate on",
+          gap(1044, age=3600) == 180)
+    check("the level rule never slows a faster interval down",
+          gap(1044, interval=60) == 60)
 
     print("\nrecovery")
     with store.connect() as conn:
