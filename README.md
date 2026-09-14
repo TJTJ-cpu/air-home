@@ -32,6 +32,26 @@ took is gone forever. A reading you haven't done yet is not.
 own clock, but it drifts — mine was already 12 seconds slow. Every photo is
 named with the exact moment it was taken, and that's what gets recorded.
 
+The names are in your own time, so the folder reads like a diary:
+
+    2026-09-13 22.04.26 UTC+7.jpg
+
+That's 10:04:26 at night on 13 September. The `UTC+7` is there so the name can
+never be misread — if you ever change the timezone setting, old photos still
+mean exactly the moment they were taken. Dots instead of colons because Windows
+won't allow colons in a file name.
+
+Photos from before this change were named in UTC (`2026-09-13T15-04-26Z.jpg`).
+They still work. To give them the new names too:
+
+    python rename_photos.py            # shows what it would do
+    python rename_photos.py --apply    # does it
+
+Stop `watch.py` first; it won't run alongside it. It backs up the database,
+renames each photo with its `.json`, and updates the database to match. Only
+the names change, not the times. It prints an `--undo` command at the end in
+case you want the old names back.
+
 ## What you need
 
 - A webcam pointed at the monitor
@@ -95,7 +115,7 @@ fixed gap, it picks between three, and the fastest one that applies wins:
 | | how often | when |
 |---|---|---|
 | Normal | your interval | nothing much happening |
-| CO₂ is high | every 2 minutes | the last reading was above 800 ppm |
+| CO₂ is high | every 2 minutes | the last reading was above 1000 ppm |
 | Something is changing | every minute | a reading jumped, in the last 10 minutes |
 
 The middle one is about a **level**, not a change. A room sitting flat at 1044
@@ -113,7 +133,7 @@ whichever rule still applies — so a fan that clears the room ends at your norm
 interval, while one that doesn't leaves it at 2 minutes. It says so when the gap
 changes:
 
-    now every 120s -- co2 1039, above 800
+    now every 120s -- co2 1039, above 1000
 
 None of this ever makes it slower than you asked. If you run `--interval 1m`,
 it stays at a minute throughout.
@@ -135,7 +155,7 @@ would count the same event twice. Humidity follows the weather outside rather
 than anything happening in the room — overnight it barely differs from daytime
 while CO₂ nearly doubles — so it is worth recording but not worth reacting to.
 
-The thresholds, the 800 ppm line and both faster gaps all live in `config.py`
+The thresholds, the 1000 ppm line and both faster gaps all live in `config.py`
 (`JUMP_THRESHOLDS`, `HIGH_CO2_PPM`, `HIGH_INTERVAL_SECONDS`,
 `FAST_INTERVAL_SECONDS`). Change them if your room behaves differently, or turn
 the whole thing off:
@@ -366,5 +386,6 @@ waiting, across every room, faster than the loop manages.
 | `recheck.py` | Re-reads photos behind readings that look wrong |
 | `readings.py` | Shows readings in the terminal |
 | `rebuild.py` | Rebuilds the database from photo files |
+| `rename_photos.py` | Gives old photos the readable local-time names |
 | `config.py` | Settings |
 | `selftest.py` | Checks the pipeline still works, in a throwaway folder |

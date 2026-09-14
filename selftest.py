@@ -66,7 +66,7 @@ def seed(room: str, count: int, start: datetime) -> None:
     pending = config.paths_for(room)["pending"]
     for i in range(count):
         stamp = (start + timedelta(minutes=3 * i)).astimezone(timezone.utc)
-        (pending / (stamp.strftime("%Y-%m-%dT%H-%M-%SZ") + ".jpg")).write_bytes(b"x")
+        (pending / (config.photo_name(stamp) + ".jpg")).write_bytes(b"x")
 
 
 def main() -> int:
@@ -176,9 +176,10 @@ def main() -> int:
         return seconds
 
     check("clean air waits the full interval", gap(600) == 180)
-    check("CO2 above 800 drops to 120s even when steady",
+    check("CO2 above 1000 drops to 120s even when steady",
           gap(1044) == config.HIGH_INTERVAL_SECONDS)
-    check("exactly 800 is not above it", gap(800) == 180)
+    check("exactly 1000 is not above it", gap(1000) == 180)
+    check("900 is not high enough any more", gap(900) == 180)
     check("something changing beats a high level",
           gap(1044, fast=True) == config.FAST_INTERVAL_SECONDS)
     check("a stale reading does not hold the fast rate on",

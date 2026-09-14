@@ -28,7 +28,6 @@ import store
 from extract import ExtractionError, extract
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
-FILENAME_FORMAT = "%Y-%m-%dT%H-%M-%SZ"
 # Consecutive unreadable photos that suggest something systemic -- the camera
 # knocked out of frame, the room light left off -- rather than one bad shot.
 ABORT_AFTER = 5
@@ -107,9 +106,8 @@ def single_instance():
 
 def captured_at(path: Path) -> str:
     """UTC timestamp for a photo, from its filename or else its mtime."""
-    try:
-        stamp = datetime.strptime(path.stem, FILENAME_FORMAT).replace(tzinfo=timezone.utc)
-    except ValueError:
+    stamp = config.photo_time(path.stem)
+    if stamp is None:
         stamp = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
     return stamp.isoformat(timespec="seconds")
 

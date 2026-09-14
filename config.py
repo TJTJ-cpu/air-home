@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -49,6 +50,53 @@ def paths_for(room: str) -> dict:
     base = CAPTURES / room_name(room)
     return {"base": base, "pending": base / "pending", "processed": base / "processed",
             "failed": base / "failed", "rejected": base / "rejected"}
+
+
+# Photo names are the capture time on your own clock, so a folder listing reads
+# like a diary:  2026-09-13 22.04.26 UTC+7.jpg
+#
+# The offset is part of the name on purpose. The name is where a photo's time
+# comes from, and a local time without its offset is ambiguous -- change
+# LOCAL_UTC_OFFSET later and every unread photo would silently shift. With it,
+# a name means one instant forever. Dots, not colons: Windows forbids colons.
+# Names still sort in time order, because the date comes first.
+_NEW_NAME = re.compile(
+    r"^(\d{4}-\d{2}-\d{2}) (\d{2})\.(\d{2})\.(\d{2}) UTC([+-])(\d{1,2})(?:\.(\d{2}))?")
+# The original names, UTC with a T and a Z. Still read, so nothing already
+# on disk breaks.
+_OLD_NAME = re.compile(r"^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})Z")
+
+
+def photo_name(moment: datetime, offset_hours: float | None = None) -> str:
+    """The file name (without .jpg) for a photo taken at this moment."""
+    hours = LOCAL_UTC_OFFSET if offset_hours is None else offset_hours
+    local = moment.astimezone(timezone(timedelta(hours=hours)))
+    sign = "-" if hours < 0 else "+"
+    whole, minutes = divmod(round(abs(hours) * 60), 60)
+    offset = f"{sign}{whole}" + (f".{minutes:02d}" if minutes else "")
+    return local.strftime("%Y-%m-%d %H.%M.%S") + f" UTC{offset}"
+
+
+def photo_time(stem: str) -> datetime | None:
+    """The moment a photo was taken, from its name -- old or new style.
+
+    Anything after the time is ignored, so a name that had a suffix added to
+    avoid a clash still reads. None if the name is not a timestamp at all.
+    """
+    if match := _NEW_NAME.match(stem):
+        day, hh, mm, ss, sign, oh, om = match.groups()
+        offset = timedelta(hours=int(oh), minutes=int(om or 0))
+        tz = timezone(-offset if sign == "-" else offset)
+    elif match := _OLD_NAME.match(stem):
+        day, hh, mm, ss = match.groups()
+        tz = timezone.utc
+    else:
+        return None
+    try:
+        local = datetime.strptime(f"{day} {hh}:{mm}:{ss}", "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return None
+    return local.replace(tzinfo=tz).astimezone(timezone.utc)
 
 
 def _int(name: str, default: int | None) -> int | None:
@@ -136,7 +184,7 @@ FAST_WINDOW_SECONDS = 600
 # number is steady -- a flat 1044 is the part of the night you most want
 # detail on. This is a level, not a change: it holds for as long as CO2 stays
 # up, where the jump rule above times out after ten quiet minutes.
-HIGH_CO2_PPM = 800
+HIGH_CO2_PPM = 1000
 HIGH_INTERVAL_SECONDS = 120
 
 

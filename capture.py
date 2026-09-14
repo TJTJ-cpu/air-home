@@ -1,7 +1,8 @@
 """Take a timestamped photo of the air monitor on a fixed interval.
 
-The filename is the capture time in UTC and is the authoritative timestamp for
-the reading -- the clock shown on the device itself is never trusted.
+The filename is the capture time, on your local clock with its UTC offset
+(2026-09-13 22.04.26 UTC+7.jpg), and is the authoritative timestamp for the
+reading -- the clock shown on the device itself is never trusted.
 
     python capture.py grandpa            # every 3 minutes
     python capture.py tj --once         # one shot, for checking framing
@@ -76,8 +77,7 @@ def grab_frame(index: int, warmup: int):
 
 def capture_one(outdir: Path, index: int, warmup: int) -> Path:
     frame = grab_frame(index, warmup)
-    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
-    path = outdir / f"{stamp}.jpg"
+    path = outdir / f"{config.photo_name(datetime.now(timezone.utc))}.jpg"
     if not cv2.imwrite(str(path), frame, [cv2.IMWRITE_JPEG_QUALITY, 92]):
         raise RuntimeError(f"failed to write {path}")
     return path
